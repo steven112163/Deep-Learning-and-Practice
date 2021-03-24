@@ -1,5 +1,6 @@
 import numpy as np
-import matplotlib as plt
+import matplotlib.pyplot as plt
+import sys
 from typing import Tuple
 from argparse import ArgumentParser, Namespace, ArgumentTypeError
 
@@ -45,7 +46,7 @@ def generate_xor_easy(n: int = 11) -> Tuple[np.ndarray, np.ndarray]:
 
 
 class Layer:
-    def __init__(self, input_links: int, output_links: int, learning_rate: int=0.7):
+    def __init__(self, input_links: int, output_links: int, learning_rate: float = 0.1):
         self.weight = np.random.normal(0, 1, (input_links + 1, output_links))
         self.forward_gradient = None
         self.backward_gradient = None
@@ -58,7 +59,7 @@ class Layer:
         :param inputs: input data for this layer
         :return: outputs computed by this layer
         """
-        self.forward_gradient = np.append(inputs, np.ones((inputs.shape[0], 1), axis=1))
+        self.forward_gradient = np.append(inputs, np.ones((inputs.shape[0], 1)), axis=1)
         self.output = self.sigmoid(np.matmul(self.forward_gradient, self.weight))
         return self.output
 
@@ -98,14 +99,17 @@ class Layer:
 
 
 class NeuralNetwork:
-    def __init__(self, epoch: int = 1000, learning_rate: float = 0.7, hidden_units: int = 4,
-                 activation: str = 'sigmoid', convolution: bool = False):
-        self.epoch = epoch
+    def __init__(self, epoch: int = 1000, learning_rate: float = 0.1, num_of_layers: int = 2, input_units: int = 2,
+                 hidden_units: int = 4, activation: str = 'sigmoid', convolution: bool = False):
+        self.num_of_epoch = epoch
         self.learning_rate = learning_rate
         self.hidden_units = hidden_units
         self.activation = activation
         self.convolution = convolution
-        self.layers = list()
+        self.layers = [Layer(input_links=input_units, output_links=hidden_units, learning_rate=learning_rate)]
+        for _ in range(num_of_layers - 1):
+            self.layers.append(Layer(input_links=hidden_units, output_links=hidden_units, learning_rate=learning_rate))
+        self.layers.append(Layer(input_links=hidden_units, output_links=1))
 
     def forward(self, inputs: np.ndarray) -> np.ndarray:
         """
@@ -134,23 +138,34 @@ class NeuralNetwork:
         for layer in self.layers:
             layer.update()
 
-    def train(self, inputs: np.ndarray, labels: np.ndarray):
+    def train(self, inputs: np.ndarray, labels: np.ndarray) -> None:
         """
         Train the neural network
         :param inputs: input data
         :param labels: input labels
-        :return:
+        :return: None
         """
+        for epoch in range(self.num_of_epoch):
+            prediction = self.forward(inputs)
+            loss = self.mse_loss(prediction=prediction, ground_truth=labels)
+            self.backward(self.mse_derivative_loss(prediction=prediction, ground_truth=labels))
+            self.update()
 
-    def predict(self, inputs: np.ndarray):
+            if epoch % 100 == 0:
+                self.info_log(f'epoch {epoch} loss : {loss}')
+
+            if loss < 0.001:
+                break
+
+    def predict(self, inputs: np.ndarray) -> np.ndarray:
         """
         Predict the labels of inputs
         :param inputs: input data
         :return: predict labels
         """
+        return np.round(self.forward(inputs=inputs))
 
-    @staticmethod
-    def show_result(inputs: np.ndarray, labels: np.ndarray) -> None:
+    def show_result(self, inputs: np.ndarray, labels: np.ndarray) -> None:
         """
         Show the ground truth and predicted results
         :param inputs: input data points
@@ -160,16 +175,45 @@ class NeuralNetwork:
         plt.subplot(1, 2, 1)
         plt.title('Ground truth', fontsize=18)
         for idx, point in enumerate(inputs):
-            plt.plot(point[0], point[1], 'ro' if labels[idx] == 0 else 'bo')
+            plt.plot(point[0], point[1], 'ro' if labels[idx][0] == 0 else 'bo')
 
-        # TODO: get pred_labels
-        pred_labels = []
+        pred_labels = self.predict(inputs)
         plt.subplot(1, 2, 2)
         plt.title('Predict result', fontsize=18)
         for idx, point in enumerate(inputs):
-            plt.plot(point[0], point[1], 'ro' if pred_labels[idx] == 0 else 'bo')
+            plt.plot(point[0], point[1], 'ro' if pred_labels[idx][0] == 0 else 'bo')
 
         plt.show()
+
+    @staticmethod
+    def mse_loss(prediction, ground_truth) -> np.ndarray:
+        """
+        Mean squared error loss
+        :param prediction: prediction from neural network
+        :param ground_truth: ground truth
+        :return: loss
+        """
+        return np.mean((prediction - ground_truth) ** 2)
+
+    @staticmethod
+    def mse_derivative_loss(prediction, ground_truth):
+        """
+        Derivative of MSE loss
+        :param prediction: prediction from neural network
+        :param ground_truth: ground truth
+        :return: derivative loss
+        """
+        return 2 * (prediction - ground_truth) / len(ground_truth)
+
+    @staticmethod
+    def info_log(log: str) -> None:
+        """
+        Print information log
+        :param log: log to be displayed
+        :return: None
+        """
+        print(f'[\033[96mINFO\033[00m] {log}')
+        sys.stdout.flush()
 
 
 def check_data_type(input_value: str) -> int:
@@ -179,7 +223,7 @@ def check_data_type(input_value: str) -> int:
     :return: integer value
     """
     int_value = int(input_value)
-    if int_value != 0 or int_value != 1:
+    if int_value != 0 and int_value != 1:
         raise ArgumentTypeError(f'Data type({input_value}) should be 0 or 1.')
     return int_value
 
@@ -189,14 +233,14 @@ def parse_arguments() -> Namespace:
     Parse arguments
     :return: all arguments
     """
-    parser = ArgumentParser()
-    parser.add_argument('--d', '--data_type', default=0, type=check_data_type)
-    parser.add_argument('--n', '--number_of_data', default=100, type=int)
-    parser.add_argument('--e', '--epoch', default=1000, type=int, help='Number of epoch')
-    parser.add_argument('--l', '--learning-rate', default=0.7, type=float, help='Learning rate of the neural network')
-    parser.add_argument('--u', '--units', default=4, type=int, help='Number of units in each hidden layer')
-    parser.add_argument('--a', '--activation', default='sigmoid', type=str, help='Type of activation function')
-    parser.add_argument('--c', '--convolution', default=False, type=bool, help='Whether to add convolution layers')
+    parser = ArgumentParser(description='Backpropagation')
+    parser.add_argument('-d', '--data_type', default=0, type=check_data_type)
+    parser.add_argument('-n', '--number_of_data', default=100, type=int)
+    parser.add_argument('-e', '--epoch', default=1000000, type=int, help='Number of epoch')
+    parser.add_argument('-l', '--learning-rate', default=0.1, type=float, help='Learning rate of the neural network')
+    parser.add_argument('-u', '--units', default=4, type=int, help='Number of units in each hidden layer')
+    parser.add_argument('-a', '--activation', default='sigmoid', type=str, help='Type of activation function')
+    parser.add_argument('-c', '--convolution', default=False, type=bool, help='Whether to add convolution layers')
 
     return parser.parse_args()
 
@@ -211,7 +255,7 @@ def main() -> None:
     number_of_data = args.number_of_data
     epoch = args.epoch
     learning_rate = args.learning_rate
-    hidden_units = args.hidden_units
+    hidden_units = args.units
     activation = args.activation
     convolution = args.convolution
 
