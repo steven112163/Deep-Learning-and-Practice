@@ -102,7 +102,6 @@ class NeuralNetwork:
                  hidden_units: int = 4, activation: str = 'sigmoid', convolution: bool = False):
         self.num_of_epoch = epoch
         self.learning_rate = learning_rate
-        self.hidden_units = hidden_units
         self.activation = activation
         self.convolution = convolution
         self.learning_epoch, self.learning_loss = list(), list()
@@ -190,7 +189,7 @@ class NeuralNetwork:
         plt.title('Predict result', fontsize=18)
         for idx, point in enumerate(inputs):
             plt.plot(point[0], point[1], 'ro' if pred_labels[idx][0] == 0 else 'bo')
-        print(f'Accuracy : {float(len(pred_labels - labels)) / len(labels)}')
+        print(f'Accuracy : {float(np.sum(pred_labels == labels)) / len(labels)}')
 
         # Plot learning curve
         plt.figure()
