@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import sys
 from typing import Tuple
 from argparse import ArgumentParser, Namespace, ArgumentTypeError
 
@@ -106,6 +105,9 @@ class NeuralNetwork:
         self.hidden_units = hidden_units
         self.activation = activation
         self.convolution = convolution
+        self.learning_epoch, self.learning_loss = list(), list()
+
+        # Setup layers
         self.layers = [Layer(input_links=input_units, output_links=hidden_units, learning_rate=learning_rate)]
         for _ in range(num_of_layers - 1):
             self.layers.append(Layer(input_links=hidden_units, output_links=hidden_units, learning_rate=learning_rate))
@@ -152,7 +154,9 @@ class NeuralNetwork:
             self.update()
 
             if epoch % 100 == 0:
-                self.info_log(f'epoch {epoch} loss : {loss}')
+                print(f'Epoch {epoch} loss : {loss}')
+                self.learning_epoch.append(epoch)
+                self.learning_loss.append(loss)
 
             if loss < 0.001:
                 break
@@ -163,7 +167,9 @@ class NeuralNetwork:
         :param inputs: input data
         :return: predict labels
         """
-        return np.round(self.forward(inputs=inputs))
+        prediction = self.forward(inputs=inputs)
+        print(prediction)
+        return np.round(prediction)
 
     def show_result(self, inputs: np.ndarray, labels: np.ndarray) -> None:
         """
@@ -172,6 +178,8 @@ class NeuralNetwork:
         :param labels: ground truth labels
         :return: None
         """
+        # Plot ground truth and prediction
+        plt.figure()
         plt.subplot(1, 2, 1)
         plt.title('Ground truth', fontsize=18)
         for idx, point in enumerate(inputs):
@@ -182,6 +190,12 @@ class NeuralNetwork:
         plt.title('Predict result', fontsize=18)
         for idx, point in enumerate(inputs):
             plt.plot(point[0], point[1], 'ro' if pred_labels[idx][0] == 0 else 'bo')
+        print(f'Accuracy : {float(len(pred_labels - labels)) / len(labels)}')
+
+        # Plot learning curve
+        plt.figure()
+        plt.title('Learning curve', fontsize=18)
+        plt.plot(self.learning_epoch, self.learning_loss)
 
         plt.show()
 
@@ -204,16 +218,6 @@ class NeuralNetwork:
         :return: derivative loss
         """
         return 2 * (prediction - ground_truth) / len(ground_truth)
-
-    @staticmethod
-    def info_log(log: str) -> None:
-        """
-        Print information log
-        :param log: log to be displayed
-        :return: None
-        """
-        print(f'[\033[96mINFO\033[00m] {log}')
-        sys.stdout.flush()
 
 
 def check_data_type(input_value: str) -> int:
