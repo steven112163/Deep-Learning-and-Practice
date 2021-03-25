@@ -213,13 +213,12 @@ class Layer:
 
 class NeuralNetwork:
     def __init__(self, epoch: int = 1000000, learning_rate: float = 0.1, num_of_layers: int = 2, input_units: int = 2,
-                 hidden_units: int = 4, activation: str = 'sigmoid', optimizer: str = 'gd', convolution: bool = False):
+                 hidden_units: int = 4, activation: str = 'sigmoid', optimizer: str = 'gd'):
         self.num_of_epoch = epoch
         self.learning_rate = learning_rate
         self.hidden_units = hidden_units
         self.activation = activation
         self.optimizer = optimizer
-        self.convolution = convolution
         self.learning_epoch, self.learning_loss = list(), list()
 
         # Setup layers
@@ -395,7 +394,6 @@ def parse_arguments() -> Namespace:
     parser.add_argument('-a', '--activation', default='sigmoid', type=check_activation_type,
                         help='Type of activation function')
     parser.add_argument('-o', '--optimizer', default='gd', type=check_optimizer_type, help='Type of optimizer')
-    parser.add_argument('-c', '--convolution', default=False, type=bool, help='Whether to add convolution layers')
 
     return parser.parse_args()
 
@@ -413,7 +411,6 @@ def main() -> None:
     hidden_units = args.units
     activation = args.activation
     optimizer = args.optimizer
-    convolution = args.convolution
 
     # Generate data points
     if not data_type:
@@ -425,8 +422,7 @@ def main() -> None:
                                    learning_rate=learning_rate,
                                    hidden_units=hidden_units,
                                    activation=activation,
-                                   optimizer=optimizer,
-                                   convolution=convolution)
+                                   optimizer=optimizer)
     neural_network.train(inputs=inputs, labels=labels)
     neural_network.show_result(inputs=inputs, labels=labels)
 
