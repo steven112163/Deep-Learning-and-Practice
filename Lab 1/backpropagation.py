@@ -62,9 +62,16 @@ class Layer:
         self.forward_gradient = np.append(inputs, np.ones((inputs.shape[0], 1)), axis=1)
         if self.activation == 'sigmoid':
             self.output = self.sigmoid(np.matmul(self.forward_gradient, self.weight))
-        else:
-            # tanh
+        elif self.activation == 'tanh':
             self.output = self.tanh(np.matmul(self.forward_gradient, self.weight))
+        elif self.activation == 'relu':
+            self.output = self.relu(np.matmul(self.forward_gradient, self.weight))
+        elif self.activation == 'leaky_relu':
+            self.output = self.leaky_relu(np.matmul(self.forward_gradient, self.weight))
+        else:
+            # Without activation function
+            self.output = np.matmul(self.forward_gradient, self.weight)
+
         return self.output
 
     def backward(self, derivative_loss: np.ndarray) -> np.ndarray:
@@ -75,9 +82,16 @@ class Layer:
         """
         if self.activation == 'sigmoid':
             self.backward_gradient = np.multiply(self.derivative_sigmoid(self.output), derivative_loss)
-        else:
-            # tanh
+        elif self.activation == 'tanh':
             self.backward_gradient = np.multiply(self.derivative_tanh(self.output), derivative_loss)
+        elif self.activation == 'relu':
+            self.backward_gradient = np.multiply(self.derivative_relu(self.output), derivative_loss)
+        elif self.activation == 'leaky_relu':
+            self.backward_gradient = np.multiply(self.derivative_leaky_relu(self.output), derivative_loss)
+        else:
+            # Without activation function
+            self.backward_gradient = derivative_loss
+
         return np.matmul(self.backward_gradient, self.weight[:-1].T)
 
     def update(self) -> None:
@@ -126,6 +140,50 @@ class Layer:
         :return: derivative tanh result
         """
         return 1.0 - y ** 2
+
+    @staticmethod
+    def relu(x: np.ndarray) -> np.ndarray:
+        """
+        Calculate relu function
+        y = max(x, 0)
+        :param x: input data
+        :return: relu results
+        """
+        return np.maximum(x, 0.0)
+
+    @staticmethod
+    def derivative_relu(y: np.ndarray) -> np.ndarray:
+        """
+        Calculate the derivative of relu function
+        y' = 1 if y >= 0
+        y' = 0 if y < 0
+        :param y: value of the relu function
+        :return: derivative relu result
+        """
+        return np.heaviside(y, 1.0)
+
+    @staticmethod
+    def leaky_relu(x: np.ndarray) -> np.ndarray:
+        """
+        Calculate leaky relu function
+        y = max(x, 0) + 0.01 * min(0, x)
+        :param x: input data
+        :return: relu results
+        """
+        return np.maximum(x, 0.0) + 0.01 * np.minimum(0.0, x)
+
+    @staticmethod
+    def derivative_leaky_relu(y: np.ndarray) -> np.ndarray:
+        """
+        Calculate the derivative of leaky relu function
+        y' = 1 if y >= 0
+        y' = 0.01 if y < 0
+        :param y: value of the relu function
+        :return: derivative relu result
+        """
+        y[y >= 0.0] = 1.0
+        y[y < 0.0] = 0.01
+        return y
 
 
 class NeuralNetwork:
