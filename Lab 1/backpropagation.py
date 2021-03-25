@@ -45,12 +45,19 @@ def generate_xor_easy(n: int = 11) -> Tuple[np.ndarray, np.ndarray]:
 
 
 class Layer:
-    def __init__(self, input_links: int, output_links: int, activation: str = 'sigmoid', learning_rate: float = 0.1):
+    def __init__(self, input_links: int, output_links: int, activation: str = 'sigmoid', optimizer: str = 'gd',
+                 learning_rate: float = 0.1):
         self.weight = np.random.normal(0, 1, (input_links + 1, output_links))
+        self.momentum = np.zeros((input_links + 1, output_links))
+        self.sum_of_squares_of_gradients = np.zeros((input_links + 1, output_links))
+        self.moving_average_m = np.zeros((input_links + 1, output_links))
+        self.moving_average_v = np.zeros((input_links + 1, output_links))
+        self.update_times = 1
         self.forward_gradient = None
         self.backward_gradient = None
         self.output = None
         self.activation = activation
+        self.optimizer = optimizer
         self.learning_rate = learning_rate
 
     def forward(self, inputs: np.ndarray) -> np.ndarray:
@@ -99,7 +106,25 @@ class Layer:
         Update weights
         :return: None
         """
-        self.weight -= self.learning_rate * np.matmul(self.forward_gradient.T, self.backward_gradient)
+        gradient = np.matmul(self.forward_gradient.T, self.backward_gradient)
+        if self.optimizer == 'gd':
+            delta_weight = -self.learning_rate * gradient
+        elif self.optimizer == 'momentum':
+            self.momentum = 0.9 * self.momentum - self.learning_rate * gradient
+            delta_weight = self.momentum
+        elif self.optimizer == 'adagrad':
+            self.sum_of_squares_of_gradients += np.square(gradient)
+            delta_weight = -self.learning_rate * gradient / np.sqrt(self.sum_of_squares_of_gradients + 1e-8)
+        else:
+            # adam
+            self.moving_average_m = 0.9 * self.moving_average_m + 0.1 * gradient
+            self.moving_average_v = 0.999 * self.moving_average_v + 0.001 * np.square(gradient)
+            bias_correction_m = self.moving_average_m / (1.0 - 0.9 ** self.update_times)
+            bias_correction_v = self.moving_average_v / (1.0 - 0.999 ** self.update_times)
+            self.update_times += 1
+            delta_weight = -self.learning_rate * bias_correction_m / (np.sqrt(bias_correction_v) + 1e-8)
+
+        self.weight += delta_weight
 
     @staticmethod
     def sigmoid(x: np.ndarray) -> np.ndarray:
@@ -188,24 +213,25 @@ class Layer:
 
 class NeuralNetwork:
     def __init__(self, epoch: int = 1000000, learning_rate: float = 0.1, num_of_layers: int = 2, input_units: int = 2,
-                 hidden_units: int = 4, activation: str = 'sigmoid', convolution: bool = False):
+                 hidden_units: int = 4, activation: str = 'sigmoid', optimizer: str = 'gd', convolution: bool = False):
         self.num_of_epoch = epoch
         self.learning_rate = learning_rate
-        self.activation = activation
         self.hidden_units = hidden_units
+        self.activation = activation
+        self.optimizer = optimizer
         self.convolution = convolution
         self.learning_epoch, self.learning_loss = list(), list()
 
         # Setup layers
         # Input layer
-        self.layers = [Layer(input_units, hidden_units, activation, learning_rate)]
+        self.layers = [Layer(input_units, hidden_units, activation, optimizer, learning_rate)]
 
         # Hidden layers
         for _ in range(num_of_layers - 1):
-            self.layers.append(Layer(hidden_units, hidden_units, activation, learning_rate))
+            self.layers.append(Layer(hidden_units, hidden_units, activation, optimizer, learning_rate))
 
         # Output layer
-        self.layers.append(Layer(hidden_units, 1, 'sigmoid', learning_rate))
+        self.layers.append(Layer(hidden_units, 1, 'sigmoid', optimizer, learning_rate))
 
     def forward(self, inputs: np.ndarray) -> np.ndarray:
         """
@@ -286,6 +312,7 @@ class NeuralNetwork:
             plt.plot(point[0], point[1], 'ro' if pred_labels[idx][0] == 0 else 'bo')
         print(f'Activation : {self.activation}')
         print(f'Hidden units : {self.hidden_units}')
+        print(f'Optimizer : {self.optimizer}')
         print(f'Accuracy : {float(np.sum(pred_labels == labels)) / len(labels)}')
 
         # Plot learning curve
@@ -341,19 +368,33 @@ def check_activation_type(input_value: str) -> str:
     return input_value
 
 
+def check_optimizer_type(input_value: str) -> str:
+    """
+    Check optimizer
+    :param input_value: input optimizer
+    :return: original optimizer if the it is valid
+    """
+    if input_value != 'gd' and input_value != 'momentum' and input_value != 'adagrad' and input_value != 'adam':
+        raise ArgumentTypeError(f"Optimizer should be 'gd', 'momentum', 'adagrad' or 'adam'.")
+
+    return input_value
+
+
 def parse_arguments() -> Namespace:
     """
     Parse arguments
     :return: all arguments
     """
-    parser = ArgumentParser(description='Backpropagation')
-    parser.add_argument('-d', '--data_type', default=0, type=check_data_type)
-    parser.add_argument('-n', '--number_of_data', default=100, type=int)
+    parser = ArgumentParser(description='Neural Network')
+    parser.add_argument('-d', '--data_type', default=0, type=check_data_type,
+                        help='0: linear data points, 1: XOR data points')
+    parser.add_argument('-n', '--number_of_data', default=100, type=int, help='Number of data points')
     parser.add_argument('-e', '--epoch', default=1000000, type=int, help='Number of epoch')
     parser.add_argument('-l', '--learning-rate', default=0.1, type=float, help='Learning rate of the neural network')
     parser.add_argument('-u', '--units', default=4, type=int, help='Number of units in each hidden layer')
     parser.add_argument('-a', '--activation', default='sigmoid', type=check_activation_type,
                         help='Type of activation function')
+    parser.add_argument('-o', '--optimizer', default='gd', type=check_optimizer_type, help='Type of optimizer')
     parser.add_argument('-c', '--convolution', default=False, type=bool, help='Whether to add convolution layers')
 
     return parser.parse_args()
@@ -371,6 +412,7 @@ def main() -> None:
     learning_rate = args.learning_rate
     hidden_units = args.units
     activation = args.activation
+    optimizer = args.optimizer
     convolution = args.convolution
 
     # Generate data points
@@ -383,6 +425,7 @@ def main() -> None:
                                    learning_rate=learning_rate,
                                    hidden_units=hidden_units,
                                    activation=activation,
+                                   optimizer=optimizer,
                                    convolution=convolution)
     neural_network.train(inputs=inputs, labels=labels)
     neural_network.show_result(inputs=inputs, labels=labels)
