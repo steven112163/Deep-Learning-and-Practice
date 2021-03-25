@@ -145,49 +145,49 @@ class Layer:
     def relu(x: np.ndarray) -> np.ndarray:
         """
         Calculate relu function
-        y = max(x, 0)
+        y = max(0, x)
         :param x: input data
         :return: relu results
         """
-        return np.maximum(x, 0.0)
+        return np.maximum(0.0, x)
 
     @staticmethod
     def derivative_relu(y: np.ndarray) -> np.ndarray:
         """
         Calculate the derivative of relu function
-        y' = 1 if y >= 0
-        y' = 0 if y < 0
+        y' = 1 if y > 0
+        y' = 0 if y <= 0
         :param y: value of the relu function
         :return: derivative relu result
         """
-        return np.heaviside(y, 1.0)
+        return np.heaviside(y, 0.0)
 
     @staticmethod
     def leaky_relu(x: np.ndarray) -> np.ndarray:
         """
         Calculate leaky relu function
-        y = max(x, 0) + 0.01 * min(0, x)
+        y = max(0, x) + 0.01 * min(0, x)
         :param x: input data
         :return: relu results
         """
-        return np.maximum(x, 0.0) + 0.01 * np.minimum(0.0, x)
+        return np.maximum(0.0, x) + 0.01 * np.minimum(0.0, x)
 
     @staticmethod
     def derivative_leaky_relu(y: np.ndarray) -> np.ndarray:
         """
         Calculate the derivative of leaky relu function
-        y' = 1 if y >= 0
-        y' = 0.01 if y < 0
+        y' = 1 if y > 0
+        y' = 0.01 if y <= 0
         :param y: value of the relu function
         :return: derivative relu result
         """
-        y[y >= 0.0] = 1.0
-        y[y < 0.0] = 0.01
+        y[y > 0.0] = 1.0
+        y[y <= 0.0] = 0.01
         return y
 
 
 class NeuralNetwork:
-    def __init__(self, epoch: int = 1000, learning_rate: float = 0.1, num_of_layers: int = 2, input_units: int = 2,
+    def __init__(self, epoch: int = 1000000, learning_rate: float = 0.1, num_of_layers: int = 2, input_units: int = 2,
                  hidden_units: int = 4, activation: str = 'sigmoid', convolution: bool = False):
         self.num_of_epoch = epoch
         self.learning_rate = learning_rate
@@ -197,10 +197,15 @@ class NeuralNetwork:
         self.learning_epoch, self.learning_loss = list(), list()
 
         # Setup layers
+        # Input layer
         self.layers = [Layer(input_units, hidden_units, activation, learning_rate)]
+
+        # Hidden layers
         for _ in range(num_of_layers - 1):
             self.layers.append(Layer(hidden_units, hidden_units, activation, learning_rate))
-        self.layers.append(Layer(hidden_units, 1, activation, learning_rate))
+
+        # Output layer
+        self.layers.append(Layer(hidden_units, 1, 'sigmoid', learning_rate))
 
     def forward(self, inputs: np.ndarray) -> np.ndarray:
         """
