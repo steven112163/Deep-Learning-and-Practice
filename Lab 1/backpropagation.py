@@ -45,11 +45,12 @@ def generate_xor_easy(n: int = 11) -> Tuple[np.ndarray, np.ndarray]:
 
 
 class Layer:
-    def __init__(self, input_links: int, output_links: int, learning_rate: float = 0.1):
+    def __init__(self, input_links: int, output_links: int, activation: str = 'sigmoid', learning_rate: float = 0.1):
         self.weight = np.random.normal(0, 1, (input_links + 1, output_links))
         self.forward_gradient = None
         self.backward_gradient = None
         self.output = None
+        self.activation = activation
         self.learning_rate = learning_rate
 
     def forward(self, inputs: np.ndarray) -> np.ndarray:
@@ -59,7 +60,11 @@ class Layer:
         :return: outputs computed by this layer
         """
         self.forward_gradient = np.append(inputs, np.ones((inputs.shape[0], 1)), axis=1)
-        self.output = self.sigmoid(np.matmul(self.forward_gradient, self.weight))
+        if self.activation == 'sigmoid':
+            self.output = self.sigmoid(np.matmul(self.forward_gradient, self.weight))
+        else:
+            # tanh
+            self.output = self.tanh(np.matmul(self.forward_gradient, self.weight))
         return self.output
 
     def backward(self, derivative_loss: np.ndarray) -> np.ndarray:
@@ -68,7 +73,11 @@ class Layer:
         :param derivative_loss: loss from next layer
         :return: loss of this layer
         """
-        self.backward_gradient = np.multiply(self.derivative_sigmoid(self.output), derivative_loss)
+        if self.activation == 'sigmoid':
+            self.backward_gradient = np.multiply(self.derivative_sigmoid(self.output), derivative_loss)
+        else:
+            # tanh
+            self.backward_gradient = np.multiply(self.derivative_tanh(self.output), derivative_loss)
         return np.matmul(self.backward_gradient, self.weight[:-1].T)
 
     def update(self) -> None:
@@ -82,6 +91,7 @@ class Layer:
     def sigmoid(x: np.ndarray) -> np.ndarray:
         """
         Calculate sigmoid function
+        y = 1 / (1 + e^(-x))
         :param x: input data
         :return: sigmoid results
         """
@@ -91,10 +101,31 @@ class Layer:
     def derivative_sigmoid(y: np.ndarray) -> np.ndarray:
         """
         Calculate the derivative of sigmoid function
+        y' = y(1 - y)
         :param y: value of the sigmoid function
         :return: derivative sigmoid result
         """
         return np.multiply(y, 1.0 - y)
+
+    @staticmethod
+    def tanh(x: np.ndarray) -> np.ndarray:
+        """
+        Calculate tanh function
+        y = tanh(x)
+        :param x: input data
+        :return: tanh results
+        """
+        return np.tanh(x)
+
+    @staticmethod
+    def derivative_tanh(y: np.ndarray) -> np.ndarray:
+        """
+        Calculate the derivative of tanh function
+        y' = 1 - y^2
+        :param y: value of the tanh function
+        :return: derivative tanh result
+        """
+        return 1.0 - y ** 2
 
 
 class NeuralNetwork:
@@ -103,14 +134,15 @@ class NeuralNetwork:
         self.num_of_epoch = epoch
         self.learning_rate = learning_rate
         self.activation = activation
+        self.hidden_units = hidden_units
         self.convolution = convolution
         self.learning_epoch, self.learning_loss = list(), list()
 
         # Setup layers
-        self.layers = [Layer(input_links=input_units, output_links=hidden_units, learning_rate=learning_rate)]
+        self.layers = [Layer(input_units, hidden_units, activation, learning_rate)]
         for _ in range(num_of_layers - 1):
-            self.layers.append(Layer(input_links=hidden_units, output_links=hidden_units, learning_rate=learning_rate))
-        self.layers.append(Layer(input_links=hidden_units, output_links=1))
+            self.layers.append(Layer(hidden_units, hidden_units, activation, learning_rate))
+        self.layers.append(Layer(hidden_units, 1, activation, learning_rate))
 
     def forward(self, inputs: np.ndarray) -> np.ndarray:
         """
@@ -189,6 +221,8 @@ class NeuralNetwork:
         plt.title('Predict result', fontsize=18)
         for idx, point in enumerate(inputs):
             plt.plot(point[0], point[1], 'ro' if pred_labels[idx][0] == 0 else 'bo')
+        print(f'Activation : {self.activation}')
+        print(f'Hidden units : {self.hidden_units}')
         print(f'Accuracy : {float(np.sum(pred_labels == labels)) / len(labels)}')
 
         # Plot learning curve
@@ -199,7 +233,7 @@ class NeuralNetwork:
         plt.show()
 
     @staticmethod
-    def mse_loss(prediction, ground_truth) -> np.ndarray:
+    def mse_loss(prediction: np.ndarray, ground_truth: np.ndarray) -> np.ndarray:
         """
         Mean squared error loss
         :param prediction: prediction from neural network
@@ -209,7 +243,7 @@ class NeuralNetwork:
         return np.mean((prediction - ground_truth) ** 2)
 
     @staticmethod
-    def mse_derivative_loss(prediction, ground_truth):
+    def mse_derivative_loss(prediction: np.ndarray, ground_truth: np.ndarray) -> np.ndarray:
         """
         Derivative of MSE loss
         :param prediction: prediction from neural network
@@ -231,6 +265,19 @@ def check_data_type(input_value: str) -> int:
     return int_value
 
 
+def check_activation_type(input_value: str) -> str:
+    """
+    Check activation function type
+    :param input_value: input function type
+    :return: original function type if the type is valid
+    """
+    if input_value != 'none' and input_value != 'sigmoid' and input_value != 'tanh' and input_value != 'relu' and input_value != 'leaky_relu':
+        raise ArgumentTypeError(
+            f"Activation function type should be 'none' or 'sigmoid' or 'tanh' or 'relu' or 'leaky_relu'.")
+
+    return input_value
+
+
 def parse_arguments() -> Namespace:
     """
     Parse arguments
@@ -242,7 +289,8 @@ def parse_arguments() -> Namespace:
     parser.add_argument('-e', '--epoch', default=1000000, type=int, help='Number of epoch')
     parser.add_argument('-l', '--learning-rate', default=0.1, type=float, help='Learning rate of the neural network')
     parser.add_argument('-u', '--units', default=4, type=int, help='Number of units in each hidden layer')
-    parser.add_argument('-a', '--activation', default='sigmoid', type=str, help='Type of activation function')
+    parser.add_argument('-a', '--activation', default='sigmoid', type=check_activation_type,
+                        help='Type of activation function')
     parser.add_argument('-c', '--convolution', default=False, type=bool, help='Whether to add convolution layers')
 
     return parser.parse_args()
