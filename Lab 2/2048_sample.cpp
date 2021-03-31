@@ -34,6 +34,7 @@
 std::ostream &info = std::cout;
 std::ostream &error = std::cerr;
 std::ostream &debug = *(new std::ofstream);
+// std::ostream &debug = std::cout;
 
 /**
  * 64-bit bitboard implementation for 2048
@@ -767,12 +768,34 @@ public:
     state select_best_move(const board &b) const {
         state after[4] = {0, 1, 2, 3}; // up, right, down, left
         state *best = after;
+        float best_total = -std::numeric_limits<float>::max();
         for (state *move = after; move != after + 4; move++) {
             if (move->assign(b)) {
                 // TODO
+                // Find empty tile
+                board after_state = move->after_state();
+                int space[16], num = 0;
+                for (int i = 0; i < 16; i++)
+                    if (after_state.at(i) == 0) {
+                        space[num++] = i;
+                    }
 
-                if (move->value() > best->value())
+                // Set value
+                float total = move->reward();
+                for (int i = 0; i < num; i++) {
+                    board* temp = new board(uint64_t(after_state));
+                    temp->set(space[i], 1);
+                    total += 0.9f * estimate(*temp) / num;
+                    temp->set(space[i], 2);
+                    total += 0.1f * estimate(*temp) / num;
+                    delete temp;
+                }
+                move->set_value(estimate(move->before_state()));
+
+                if (total > best_total) {
                     best = move;
+                    best_total = total;
+                }
             } else {
                 move->set_value(-std::numeric_limits<float>::max());
             }
@@ -797,7 +820,13 @@ public:
      */
     void update_episode(std::vector <state> &path, float alpha = 0.1) const {
         // TODO
-
+        float exact = 0;
+        for (path.pop_back() /* terminal state */; path.size(); path.pop_back()) {
+            state &move = path.back();
+            float error = exact - (move.value() - move.reward());
+            debug << "update error = " << error << " for after state" << std::endl << move.after_state();
+            exact = move.reward() + update(move.before_state(), alpha * error);
+        }
     }
 
     /**
@@ -966,8 +995,11 @@ int main(int argc, const char *argv[]) {
         path.clear();
     }
 
+    info << "end" << std::endl;
+    getc(stdin);
+
     // store the model into file
-    tdl.save("");
+    tdl.save("test.txt");
 
     return 0;
 }
