@@ -946,7 +946,7 @@ int main(int argc, const char *argv[]) {
 
     // set the learning parameters
     float alpha = 0.1;
-    size_t total = 100000;
+    size_t total = 500000;
     unsigned seed;
     __asm__ __volatile__ ("rdtsc" : "=a" (seed));
     info << "alpha = " << alpha << std::endl;
@@ -959,6 +959,10 @@ int main(int argc, const char *argv[]) {
     tdl.add_feature(new pattern({4, 5, 6, 7, 8, 9}));
     tdl.add_feature(new pattern({0, 1, 2, 4, 5, 6}));
     tdl.add_feature(new pattern({4, 5, 6, 8, 9, 10}));
+    tdl.add_feature(new pattern({0, 2, 5, 10}));
+    tdl.add_feature(new pattern({4, 6, 9, 14}));
+    tdl.add_feature(new pattern({1, 4, 5, 6, 9, 13}));
+    tdl.add_feature(new pattern({1, 4, 9, 14}));
 
     // restore the model from file
     tdl.load("");
@@ -999,7 +1003,7 @@ int main(int argc, const char *argv[]) {
     getc(stdin);
 
     // store the model into file
-    tdl.save("test.txt");
+    tdl.save("");
 
     return 0;
 }
