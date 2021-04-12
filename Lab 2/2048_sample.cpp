@@ -519,9 +519,11 @@ public:
      */
     virtual float estimate(const board &b) const {
         // TODO
+        // Sum up the values of all isomorphic patterns
         float value = 0;
         for (int i = 0; i < iso_last; i++) {
             size_t index = indexof(isomorphic[i], b);
+            // Operator will return the value of the given pattern.
             value += operator[](index);
         }
         return value;
@@ -534,6 +536,7 @@ public:
         // TODO
         float u_split = u / iso_last;
         float value = 0;
+        // Update all isomorphic patterns with the average value
         for (int i = 0; i < iso_last; i++) {
             size_t index = indexof(isomorphic[i], b);
             operator[](index) += u_split;
@@ -577,6 +580,8 @@ protected:
 
     size_t indexof(const std::vector<int> &patt, const board &b) const {
         // TODO
+        // Return b.at(patt[len - 1]) | b.at(patt[len - 2]) | ... | b.at(patt[1]) | b.at(patt[0])
+        // as a value
         size_t index = 0;
         for (size_t i = 0; i < patt.size(); i++)
             index |= b.at(patt[i]) << (4 * i);
