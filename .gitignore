@@ -1,3 +1,4 @@
 .idea
 *.exe
 *.bin
+__pycache__
