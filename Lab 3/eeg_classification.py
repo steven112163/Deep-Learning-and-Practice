@@ -1,5 +1,6 @@
 from dataloader import read_bci_data
-from torch import Tensor, device, cuda, max, no_grad
+from torch import Tensor, device, cuda, no_grad
+from torch import max as tensor_max
 from torch.utils.data import TensorDataset, DataLoader
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
 from typing import Dict
@@ -85,6 +86,7 @@ def show_results(accuracy: Dict[str, dict]) -> None:
     for train_or_test, data in accuracy.items():
         for model, acc in data.items():
             plt.plot(range(300), acc, label=f'{model}_{train_or_test}')
+            print(f'{model}_{train_or_test}:\t{max(acc)}')
 
     plt.legend()
     plt.show()
@@ -139,18 +141,18 @@ def train(epochs: int, learning_rate: float, optimizer: op, loss_function: nn.mo
                 loss.backward()
                 model_optimizer.step()
 
-                accuracy['train'][key][-1] += (max(pred_labels, 1)[1] == labels).sum().item()
+                accuracy['train'][key][-1] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
             accuracy['train'][key][-1] = 100.0 * accuracy['train'][key][-1]
 
             # Test model
             with no_grad():
                 for data, label in test_loader:
-                    inputs = data.to(device)
-                    labels = label.to(device).long()
+                    inputs = data.to(train_device)
+                    labels = label.to(train_device).long()
 
                     pred_labels = model.forward(inputs=inputs)
 
-                    accuracy['test'][key][-1] += (max(pred_labels, 1)[1] == labels).sum().item()
+                    accuracy['test'][key][-1] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
                 accuracy['test'][key][-1] = 100.0 * accuracy['test'][key][-1]
 
     cuda.empty_cache()
