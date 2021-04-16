@@ -3,7 +3,7 @@ from torch import Tensor, device, cuda, no_grad
 from torch import max as tensor_max
 from torch.utils.data import TensorDataset, DataLoader
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
-from typing import Dict
+from typing import Dict, List, Tuple
 import sys
 import torch.nn as nn
 import torch.optim as op
@@ -72,23 +72,90 @@ class EEGNet(nn.Module):
         return self.classify(separable_conv_results.view(-1, 736))
 
 
-def show_results(accuracy: Dict[str, dict]) -> None:
+class DeepConvNet(nn.Module):
+    def __init__(self, activation: nn.modules.activation, filters: Tuple[int] = (25, 50, 100, 200)):
+        super().__init__()
+
+        self.filters = filters
+        self.conv_0 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=1,
+                out_channels=filters[0],
+                kernel_size=(1, 5)
+            ),
+            nn.Conv2d(
+                in_channels=filters[0],
+                out_channels=filters[0],
+                kernel_size=(2, 1)
+            ),
+            nn.BatchNorm2d(filters[0]),
+            activation(),
+            nn.MaxPool2d(kernel_size=(1, 2)),
+            nn.Dropout(p=0.5)
+        )
+
+        for idx, num_of_filters in enumerate(filters[:-1], start=1):
+            setattr(self, f'conv_{idx}', nn.Sequential(
+                nn.Conv2d(
+                    in_channels=num_of_filters,
+                    out_channels=filters[idx],
+                    kernel_size=(1, 5)
+                ),
+                nn.BatchNorm2d(filters[idx]),
+                activation(),
+                nn.MaxPool2d(kernel_size=(1, 2)),
+                nn.Dropout(p=0.5)
+            ))
+
+        self.flatten = nn.Sequential(
+            nn.Flatten()
+        )
+
+    def forward(self, inputs: TensorDataset) -> Tensor:
+        """
+        Forward propagation
+        :param inputs: input data
+        :return: results
+        """
+        partial_results = inputs
+        for idx in range(len(self.filters)):
+            partial_results = getattr(self, f'conv_{idx}')(partial_results)
+        return nn.Sequential(nn.Linear(partial_results.size()[-1], 2, bias=True))(partial_results)
+
+
+def show_results(accuracy: Dict[str, dict], eeg_keys: List[str], deep_keys: List[str]) -> None:
     """
     Show accuracy results
     :param accuracy: training and testing accuracy of different activation functions
+    :param eeg_keys: names of EEGNet with different activation functions
+    :param deep_keys: names of DeepConvNet with different activation functions
     :return: None
     """
-    fig = plt.figure(0)
+    # Plot EGGNet
+    plt.figure(0)
     plt.title('Activation Function Comparison (EEGNet)')
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy (%)')
 
-    for train_or_test, data in accuracy.items():
-        for model, acc in data.items():
-            plt.plot(range(300), acc, label=f'{model}_{train_or_test}')
-            print(f'{model}_{train_or_test}:\t{max(acc)}')
+    for train_or_test, acc in accuracy.items():
+        for model in eeg_keys:
+            plt.plot(range(300), acc[model], label=f'{model}_{train_or_test}')
+            print(f'{model}_{train_or_test}:\t{max(acc[model])}')
 
-    plt.legend()
+    plt.legend(loc='lower right')
+
+    # Plot DeepConvNet
+    plt.figure(1)
+    plt.title('Activation Function Comparison (DeepConvNet)')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy (%)')
+
+    for train_or_test, acc in accuracy.items():
+        for model in deep_keys:
+            plt.plot(range(300), acc[model], label=f'{model}_{train_or_test}')
+            print(f'{model}_{train_or_test}:\t{max(acc[model])}')
+
+    plt.legend(loc='lower right')
     plt.show()
 
 
@@ -112,14 +179,18 @@ def train(epochs: int, learning_rate: float, batch_size: int, optimizer: op, los
     models = {
         'EEG_ELU': EEGNet(nn.ELU).to(train_device),
         'EEG_ReLU': EEGNet(nn.ReLU).to(train_device),
-        'EEG_LeakyReLU': EEGNet(nn.LeakyReLU).to(train_device)
+        'EEG_LeakyReLU': EEGNet(nn.LeakyReLU).to(train_device),
+        'Deep_ELU': DeepConvNet(nn.ELU).to(train_device),
+        'Deep_ReLU': DeepConvNet(nn.ReLU).to(train_device),
+        'Deep_LeakyReLU': DeepConvNet(nn.LeakyReLU).to(train_device)
     }
 
     # Setup accuracy structure
-    keys = ['EEG_ELU', 'EEG_ReLU', 'EEG_LeakyReLU']
+    eeg_keys = ['EEG_ELU', 'EEG_ReLU', 'EEG_LeakyReLU']
+    deep_keys = ['Deep_ELU', 'Deep_ReLU', 'Deep_LeakyReLU']
     accuracy = {
-        'train': {key: [0 for _ in range(epochs)] for key in keys},
-        'test': {key: [0 for _ in range(epochs)] for key in keys}
+        'train': {key: [0 for _ in range(epochs)] for key in eeg_keys + deep_keys},
+        'test': {key: [0 for _ in range(epochs)] for key in eeg_keys + deep_keys}
     }
 
     # Start training
@@ -132,8 +203,9 @@ def train(epochs: int, learning_rate: float, batch_size: int, optimizer: op, los
 
         for epoch in range(epochs):
             sys.stdout.write('\r')
-            sys.stdout.write(f'Epoch: {epoch} / {epochs}')
+            sys.stdout.write(f'Epoch: {epoch + 1} / {epochs}')
             sys.stdout.flush()
+
             # Train model
             for data, label in train_loader:
                 inputs = data.to(train_device)
@@ -159,9 +231,10 @@ def train(epochs: int, learning_rate: float, batch_size: int, optimizer: op, los
 
                     accuracy['test'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
                 accuracy['test'][key][epoch] = 100.0 * accuracy['test'][key][epoch] / len(test_dataset)
+        print()
 
     cuda.empty_cache()
-    show_results(accuracy=accuracy)
+    show_results(accuracy=accuracy, eeg_keys=eeg_keys, deep_keys=deep_keys)
 
 
 def info_log(log: str, verbosity: int) -> None:
