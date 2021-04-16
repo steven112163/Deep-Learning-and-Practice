@@ -4,6 +4,7 @@ from torch import max as tensor_max
 from torch.utils.data import TensorDataset, DataLoader
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
 from typing import Dict, List, Tuple
+from functools import reduce
 import sys
 import torch.nn as nn
 import torch.optim as op
@@ -78,19 +79,23 @@ class DeepConvNet(nn.Module):
 
         self.filters = filters
         self.conv_0 = nn.Sequential(
+            # an input = [1, 1, 2, 750]
             nn.Conv2d(
                 in_channels=1,
                 out_channels=filters[0],
                 kernel_size=(1, 5)
             ),
+            # an input = [1, 25, 2, 746]
             nn.Conv2d(
                 in_channels=filters[0],
                 out_channels=filters[0],
                 kernel_size=(2, 1)
             ),
+            # an input = [1, 25, 1, 746]
             nn.BatchNorm2d(filters[0]),
             activation(),
             nn.MaxPool2d(kernel_size=(1, 2)),
+            # an input = [1, 25, 1, 373]
             nn.Dropout(p=0.5)
         )
 
@@ -107,8 +112,12 @@ class DeepConvNet(nn.Module):
                 nn.Dropout(p=0.5)
             ))
 
-        self.flatten = nn.Sequential(
-            nn.Flatten()
+        self.flatten_size = filters[-1] * reduce(lambda x, _: round((x - 4) / 2), filters[:-1], 373)
+        self.classify = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(in_features=self.flatten_size,
+                      out_features=2,
+                      bias=True)
         )
 
     def forward(self, inputs: TensorDataset) -> Tensor:
@@ -120,8 +129,7 @@ class DeepConvNet(nn.Module):
         partial_results = inputs
         for idx in range(len(self.filters)):
             partial_results = getattr(self, f'conv_{idx}')(partial_results)
-        partial_results = self.flatten(partial_results)
-        return nn.Sequential(nn.Linear(partial_results.size()[-1], 2, bias=True))(partial_results)
+        return self.classify(partial_results)
 
 
 def show_results(accuracy: Dict[str, dict], eeg_keys: List[str], deep_keys: List[str]) -> None:
