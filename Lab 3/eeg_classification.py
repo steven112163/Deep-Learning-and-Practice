@@ -120,6 +120,7 @@ class DeepConvNet(nn.Module):
         partial_results = inputs
         for idx in range(len(self.filters)):
             partial_results = getattr(self, f'conv_{idx}')(partial_results)
+        partial_results = self.flatten(partial_results)
         return nn.Sequential(nn.Linear(partial_results.size()[-1], 2, bias=True))(partial_results)
 
 
