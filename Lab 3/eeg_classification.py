@@ -1,10 +1,12 @@
 from dataloader import read_bci_data
-from torch import Tensor, device, cuda, stack
+from torch import Tensor, device, cuda, max, no_grad
 from torch.utils.data import TensorDataset, DataLoader
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
+from typing import Dict
 import sys
 import torch.nn as nn
 import torch.optim as op
+import matplotlib.pyplot as plt
 
 
 class EEGNet(nn.Module):
@@ -69,6 +71,25 @@ class EEGNet(nn.Module):
         return self.classify(separable_conv_results.view(-1, 736))
 
 
+def show_results(accuracy: Dict[str, dict]) -> None:
+    """
+    Show accuracy results
+    :param accuracy: training and testing accuracy of different activation functions
+    :return: None
+    """
+    fig = plt.figure(0)
+    plt.title('Activation Function Comparison (EEGNet)')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy (%)')
+
+    for train_or_test, data in accuracy.items():
+        for model, acc in data.items():
+            plt.plot(range(300), acc, label=f'{model}_{train_or_test}')
+
+    plt.legend()
+    plt.show()
+
+
 def train(epochs: int, learning_rate: float, optimizer: op, loss_function: nn.modules.loss, train_device: device,
           train_loader: DataLoader, test_loader: DataLoader, verbosity: int) -> None:
     """
@@ -91,6 +112,13 @@ def train(epochs: int, learning_rate: float, optimizer: op, loss_function: nn.mo
         'EEG_LeakyReLU': EEGNet(nn.LeakyReLU).to(train_device)
     }
 
+    # Setup accuracy structure
+    keys = ['EEG_ELU', 'EEG_ReLU', 'EEG_LeakyReLU']
+    accuracy = {
+        'train': {key: [0 for _ in range(epochs)] for key in keys},
+        'test': {key: [0 for _ in range(epochs)] for key in keys}
+    }
+
     # Start training
     info_log('Start training', verbosity=verbosity)
     for key, model in models.items():
@@ -108,11 +136,25 @@ def train(epochs: int, learning_rate: float, optimizer: op, loss_function: nn.mo
 
                 model_optimizer.zero_grad()
                 loss = loss_function(pred_labels, labels)
-                print(f'Loss: {loss}')
                 loss.backward()
                 model_optimizer.step()
 
+                accuracy['train'][key][-1] += (max(pred_labels, 1)[1] == labels).sum().item()
+            accuracy['train'][key][-1] = 100.0 * accuracy['train'][key][-1]
+
+            # Test model
+            with no_grad():
+                for data, label in test_loader:
+                    inputs = data.to(device)
+                    labels = label.to(device).long()
+
+                    pred_labels = model.forward(inputs=inputs)
+
+                    accuracy['test'][key][-1] += (max(pred_labels, 1)[1] == labels).sum().item()
+                accuracy['test'][key][-1] = 100.0 * accuracy['test'][key][-1]
+
     cuda.empty_cache()
+    show_results(accuracy=accuracy)
 
 
 def info_log(log: str, verbosity: int) -> None:
