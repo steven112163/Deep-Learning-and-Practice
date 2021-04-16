@@ -92,17 +92,18 @@ def show_results(accuracy: Dict[str, dict]) -> None:
     plt.show()
 
 
-def train(epochs: int, learning_rate: float, optimizer: op, loss_function: nn.modules.loss, train_device: device,
-          train_loader: DataLoader, test_loader: DataLoader, verbosity: int) -> None:
+def train(epochs: int, learning_rate: float, batch_size: int, optimizer: op, loss_function: nn.modules.loss,
+          train_device: device, train_dataset: TensorDataset, test_dataset: TensorDataset, verbosity: int) -> None:
     """
     Train the models
     :param epochs: number of epochs
     :param learning_rate: learning rate
+    :param batch_size: batch size
     :param optimizer: optimizer
     :param loss_function: loss function
     :param train_device: training device
-    :param train_loader: training data loader
-    :param test_loader: testing data loader
+    :param train_dataset: training dataset
+    :param test_dataset: testing dataset
     :param verbosity: whether to show info log
     :return: None
     """
@@ -123,12 +124,16 @@ def train(epochs: int, learning_rate: float, optimizer: op, loss_function: nn.mo
 
     # Start training
     info_log('Start training', verbosity=verbosity)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size)
+    test_loader = DataLoader(test_dataset, len(test_dataset))
     for key, model in models.items():
         info_log(f'Training {key} ...', verbosity=verbosity)
         model_optimizer = optimizer(model.parameters(), lr=learning_rate)
 
         for epoch in range(epochs):
-            print(f'Epoch: {epoch}')
+            sys.stdout.write('\r')
+            sys.stdout.write(f'Epoch: {epoch} / {epochs}')
+            sys.stdout.flush()
             # Train model
             for data, label in train_loader:
                 inputs = data.to(train_device)
@@ -141,8 +146,8 @@ def train(epochs: int, learning_rate: float, optimizer: op, loss_function: nn.mo
                 loss.backward()
                 model_optimizer.step()
 
-                accuracy['train'][key][-1] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
-            accuracy['train'][key][-1] = 100.0 * accuracy['train'][key][-1]
+                accuracy['train'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
+            accuracy['train'][key][epoch] = 100.0 * accuracy['train'][key][epoch] / len(train_dataset)
 
             # Test model
             with no_grad():
@@ -152,8 +157,8 @@ def train(epochs: int, learning_rate: float, optimizer: op, loss_function: nn.mo
 
                     pred_labels = model.forward(inputs=inputs)
 
-                    accuracy['test'][key][-1] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
-                accuracy['test'][key][-1] = 100.0 * accuracy['test'][key][-1]
+                    accuracy['test'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
+                accuracy['test'][key][epoch] = 100.0 * accuracy['test'][key][epoch] / len(test_dataset)
 
     cuda.empty_cache()
     show_results(accuracy=accuracy)
@@ -242,8 +247,6 @@ def main() -> None:
     train_data, train_label, test_data, test_label = read_bci_data()
     train_dataset = TensorDataset(Tensor(train_data), Tensor(train_label))
     test_dataset = TensorDataset(Tensor(test_data), Tensor(test_label))
-    train_loader = DataLoader(train_dataset, batch_size=batch_size)
-    test_loader = DataLoader(test_dataset, len(test_dataset))
 
     # Get training device
     train_device = device("cuda" if cuda.is_available() else "cpu")
@@ -252,11 +255,12 @@ def main() -> None:
     # Train models
     train(epochs=epochs,
           learning_rate=learning_rate,
+          batch_size=batch_size,
           optimizer=optimizer,
           loss_function=loss_function,
           train_device=train_device,
-          train_loader=train_loader,
-          test_loader=test_loader,
+          train_dataset=train_dataset,
+          test_dataset=test_dataset,
           verbosity=verbosity)
 
 
