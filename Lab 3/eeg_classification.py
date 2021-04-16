@@ -1,14 +1,14 @@
 from dataloader import read_bci_data
-from torch import Tensor
+from torch import Tensor, device, cuda, stack
 from torch.utils.data import TensorDataset, DataLoader
-from torch import device, cuda
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
 import sys
 import torch.nn as nn
+import torch.optim as op
 
 
 class EEGNet(nn.Module):
-    def __init__(self, activation=nn.ELU):
+    def __init__(self, activation: nn.modules.activation):
         super().__init__()
 
         self.first_conv = nn.Sequential(
@@ -57,7 +57,7 @@ class EEGNet(nn.Module):
             nn.Linear(in_features=736, out_features=2, bias=True)
         )
 
-    def forward(self, inputs: TensorDataset) -> TensorDataset:
+    def forward(self, inputs: TensorDataset) -> Tensor:
         """
         Forward propagation
         :param inputs: input data
@@ -66,22 +66,53 @@ class EEGNet(nn.Module):
         first_conv_results = self.first_conv(inputs)
         depth_wise_conv_results = self.depth_wise_conv(first_conv_results)
         separable_conv_results = self.separable_conv(depth_wise_conv_results)
-        flatten_results = separable_conv_results.view(-1, 736)
-        results = self.classify(flatten_results)
-
-        return results
+        return self.classify(separable_conv_results.view(-1, 736))
 
 
-def train(epochs: int, learning_rate: float, train_device: device, train_loader: DataLoader, test_loader: DataLoader) -> None:
+def train(epochs: int, learning_rate: float, optimizer: op, loss_function: nn.modules.loss, train_device: device,
+          train_loader: DataLoader, test_loader: DataLoader, verbosity: int) -> None:
     """
     Train the models
     :param epochs: number of epochs
     :param learning_rate: learning rate
+    :param optimizer: optimizer
+    :param loss_function: loss function
     :param train_device: training device
     :param train_loader: training data loader
     :param test_loader: testing data loader
+    :param verbosity: whether to show info log
     :return: None
     """
+    # Setup models for different activation functions
+    info_log('Setup models', verbosity=verbosity)
+    models = {
+        'EEG_ELU': EEGNet(nn.ELU).to(train_device),
+        'EEG_ReLU': EEGNet(nn.ReLU).to(train_device),
+        'EEG_LeakyReLU': EEGNet(nn.LeakyReLU).to(train_device)
+    }
+
+    # Start training
+    info_log('Start training', verbosity=verbosity)
+    for key, model in models.items():
+        info_log(f'Training {key} ...', verbosity=verbosity)
+        model_optimizer = optimizer(model.parameters(), lr=learning_rate)
+
+        for epoch in range(epochs):
+            print(f'Epoch: {epoch}')
+            # Train model
+            for data, label in train_loader:
+                inputs = data.to(train_device)
+                labels = label.to(train_device).long()
+
+                pred_labels = model.forward(inputs=inputs)
+
+                model_optimizer.zero_grad()
+                loss = loss_function(pred_labels, labels)
+                print(f'Loss: {loss}')
+                loss.backward()
+                model_optimizer.step()
+
+    cuda.empty_cache()
 
 
 def info_log(log: str, verbosity: int) -> None:
@@ -108,6 +139,30 @@ def check_verbosity_type(input_value: str) -> int:
     return int_value
 
 
+def check_optimizer_type(input_value: str) -> op:
+    """
+    Check whether the optimizer is supported
+    :param input_value: input string value
+    :return: optimizer
+    """
+    if input_value == 'adam':
+        return op.Adam
+
+    raise ArgumentTypeError(f'Optimizer {input_value} is not supported.')
+
+
+def check_loss_type(input_value: str) -> nn.modules.loss:
+    """
+    Check whether the loss function is supported
+    :param input_value: input string value
+    :return: loss function
+    """
+    if input_value == 'cross_entropy':
+        return nn.CrossEntropyLoss()
+
+    raise ArgumentTypeError(f'Loss function {input_value} is not supported.')
+
+
 def parse_arguments() -> Namespace:
     """
     Parse arguments
@@ -115,8 +170,10 @@ def parse_arguments() -> Namespace:
     """
     parser = ArgumentParser(description='EEGNet & DeepConvNet')
     parser.add_argument('-e', '--epochs', default=300, type=int, help='Number of epochs')
-    parser.add_argument('-l', '--learning_rate', default=1e-2, type=float, help='Learning rate')
+    parser.add_argument('-lr', '--learning_rate', default=1e-2, type=float, help='Learning rate')
     parser.add_argument('-b', '--batch_size', default=64, type=int, help='Batch size')
+    parser.add_argument('-o', '--optimizer', default='adam', type=check_optimizer_type, help='Optimizer')
+    parser.add_argument('-lf', '--loss_function', default='cross_entropy', type=check_loss_type, help='Loss function')
     parser.add_argument('-v', '--verbosity', default=0, type=check_verbosity_type, help='Whether to show info log')
 
     return parser.parse_args()
@@ -132,6 +189,8 @@ def main() -> None:
     epochs = arguments.epochs
     learning_rate = arguments.learning_rate
     batch_size = arguments.batch_size
+    optimizer = arguments.optimizer
+    loss_function = arguments.loss_function
     verbosity = arguments.verbosity
 
     # Read data
@@ -149,9 +208,12 @@ def main() -> None:
     # Train models
     train(epochs=epochs,
           learning_rate=learning_rate,
+          optimizer=optimizer,
+          loss_function=loss_function,
           train_device=train_device,
           train_loader=train_loader,
-          test_loader=test_loader)
+          test_loader=test_loader,
+          verbosity=verbosity)
 
 
 if __name__ == '__main__':
