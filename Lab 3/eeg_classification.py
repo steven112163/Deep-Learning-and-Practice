@@ -141,7 +141,7 @@ def show_results(epochs: int, accuracy: Dict[str, dict], eeg_keys: List[str], de
     :param deep_keys: names of DeepConvNet with different activation functions
     :return: None
     """
-    longest = len(max(eeg_keys + deep_keys, key=len))
+    longest = len(max(eeg_keys + deep_keys, key=len)) + 6
 
     # Plot EGGNet
     plt.figure(0)
@@ -152,7 +152,7 @@ def show_results(epochs: int, accuracy: Dict[str, dict], eeg_keys: List[str], de
     for train_or_test, acc in accuracy.items():
         for model in eeg_keys:
             plt.plot(range(epochs), acc[model], label=f'{model}_{train_or_test}')
-            spaces = ''.join([' ' for _ in range(longest - len(model))])
+            spaces = ''.join([' ' for _ in range(longest - len(f'{model}_{train_or_test}'))])
             print(f'{model}_{train_or_test}: {spaces}{max(acc[model]):.2f} %')
 
     plt.legend(loc='lower right')
@@ -166,7 +166,7 @@ def show_results(epochs: int, accuracy: Dict[str, dict], eeg_keys: List[str], de
     for train_or_test, acc in accuracy.items():
         for model in deep_keys:
             plt.plot(range(epochs), acc[model], label=f'{model}_{train_or_test}')
-            spaces = ''.join([' ' for _ in range(longest - len(model))])
+            spaces = ''.join([' ' for _ in range(longest - len(f'{model}_{train_or_test}'))])
             print(f'{model}_{train_or_test}: {spaces}{max(acc[model]):.2f} %')
 
     plt.legend(loc='lower right')
