@@ -58,6 +58,7 @@ class EEGNet(nn.Module):
         )
 
         self.classify = nn.Sequential(
+            nn.Flatten(),
             nn.Linear(in_features=736, out_features=2, bias=True)
         )
 
@@ -70,7 +71,7 @@ class EEGNet(nn.Module):
         first_conv_results = self.first_conv(inputs)
         depth_wise_conv_results = self.depth_wise_conv(first_conv_results)
         separable_conv_results = self.separable_conv(depth_wise_conv_results)
-        return self.classify(separable_conv_results.view(-1, 736))
+        return self.classify(separable_conv_results)
 
 
 class DeepConvNet(nn.Module):
@@ -116,6 +117,12 @@ class DeepConvNet(nn.Module):
         self.classify = nn.Sequential(
             nn.Flatten(),
             nn.Linear(in_features=self.flatten_size,
+                      out_features=50,
+                      bias=True),
+            nn.Linear(in_features=50,
+                      out_features=20,
+                      bias=True),
+            nn.Linear(in_features=20,
                       out_features=2,
                       bias=True)
         )
