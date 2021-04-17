@@ -5,6 +5,7 @@ from torch.utils.data import TensorDataset, DataLoader
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
 from typing import Dict, List, Tuple
 from functools import reduce
+from collections import OrderedDict
 import sys
 import torch.nn as nn
 import torch.optim as op
@@ -114,18 +115,20 @@ class DeepConvNet(nn.Module):
             ))
 
         self.flatten_size = filters[-1] * reduce(lambda x, _: round((x - 4) / 2), filters[:-1], 373)
-        self.classify = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(in_features=self.flatten_size,
-                      out_features=50,
-                      bias=True),
-            nn.Linear(in_features=50,
-                      out_features=20,
-                      bias=True),
-            nn.Linear(in_features=20,
-                      out_features=2,
-                      bias=True)
-        )
+        interval = round((self.flatten_size - 2.0) / 7.0)
+        next_layer = self.flatten_size
+        features = []
+        while next_layer > 2:
+            features.append(next_layer)
+            next_layer -= interval
+        features.append(2)
+
+        layers = [('flatten', nn.Flatten())]
+        for idx, in_features in enumerate(features[:-1]):
+            layers.append((f'linear_{idx}', nn.Linear(in_features=in_features,
+                                                      out_features=features[idx + 1],
+                                                      bias=True)))
+        self.classify = nn.Sequential(OrderedDict(layers))
 
     def forward(self, inputs: TensorDataset) -> Tensor:
         """
