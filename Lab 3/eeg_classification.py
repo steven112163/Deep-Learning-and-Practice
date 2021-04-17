@@ -132,9 +132,10 @@ class DeepConvNet(nn.Module):
         return self.classify(partial_results)
 
 
-def show_results(accuracy: Dict[str, dict], eeg_keys: List[str], deep_keys: List[str]) -> None:
+def show_results(epochs: int, accuracy: Dict[str, dict], eeg_keys: List[str], deep_keys: List[str]) -> None:
     """
     Show accuracy results
+    :param epochs: number of epochs
     :param accuracy: training and testing accuracy of different activation functions
     :param eeg_keys: names of EEGNet with different activation functions
     :param deep_keys: names of DeepConvNet with different activation functions
@@ -150,7 +151,7 @@ def show_results(accuracy: Dict[str, dict], eeg_keys: List[str], deep_keys: List
 
     for train_or_test, acc in accuracy.items():
         for model in eeg_keys:
-            plt.plot(range(300), acc[model], label=f'{model}_{train_or_test}')
+            plt.plot(range(epochs), acc[model], label=f'{model}_{train_or_test}')
             spaces = ''.join([' ' for _ in range(longest - len(model))])
             print(f'{model}_{train_or_test}: {spaces}{max(acc[model]):.2f} %')
 
@@ -164,7 +165,7 @@ def show_results(accuracy: Dict[str, dict], eeg_keys: List[str], deep_keys: List
 
     for train_or_test, acc in accuracy.items():
         for model in deep_keys:
-            plt.plot(range(300), acc[model], label=f'{model}_{train_or_test}')
+            plt.plot(range(epochs), acc[model], label=f'{model}_{train_or_test}')
             spaces = ''.join([' ' for _ in range(longest - len(model))])
             print(f'{model}_{train_or_test}: {spaces}{max(acc[model]):.2f} %')
 
@@ -247,7 +248,7 @@ def train(epochs: int, learning_rate: float, batch_size: int, optimizer: op, los
         print()
 
     cuda.empty_cache()
-    show_results(accuracy=accuracy, eeg_keys=eeg_keys, deep_keys=deep_keys)
+    show_results(epochs=epochs, accuracy=accuracy, eeg_keys=eeg_keys, deep_keys=deep_keys)
 
 
 def info_log(log: str, verbosity: int) -> None:
