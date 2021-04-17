@@ -140,6 +140,8 @@ def show_results(accuracy: Dict[str, dict], eeg_keys: List[str], deep_keys: List
     :param deep_keys: names of DeepConvNet with different activation functions
     :return: None
     """
+    longest = len(max(eeg_keys + deep_keys, key=len))
+
     # Plot EGGNet
     plt.figure(0)
     plt.title('Activation Function Comparison (EEGNet)')
@@ -149,7 +151,8 @@ def show_results(accuracy: Dict[str, dict], eeg_keys: List[str], deep_keys: List
     for train_or_test, acc in accuracy.items():
         for model in eeg_keys:
             plt.plot(range(300), acc[model], label=f'{model}_{train_or_test}')
-            print(f'{model}_{train_or_test}:\t{max(acc[model])}')
+            spaces = ''.join([' ' for _ in range(longest - len(model))])
+            print(f'{model}_{train_or_test}: {spaces}{max(acc[model]):.2f} %')
 
     plt.legend(loc='lower right')
 
@@ -162,7 +165,8 @@ def show_results(accuracy: Dict[str, dict], eeg_keys: List[str], deep_keys: List
     for train_or_test, acc in accuracy.items():
         for model in deep_keys:
             plt.plot(range(300), acc[model], label=f'{model}_{train_or_test}')
-            print(f'{model}_{train_or_test}:\t{max(acc[model])}')
+            spaces = ''.join([' ' for _ in range(longest - len(model))])
+            print(f'{model}_{train_or_test}: {spaces}{max(acc[model]):.2f} %')
 
     plt.legend(loc='lower right')
     plt.show()
@@ -278,6 +282,14 @@ def check_optimizer_type(input_value: str) -> op:
     """
     if input_value == 'adam':
         return op.Adam
+    elif input_value == 'adadelta':
+        return op.Adadelta
+    elif input_value == 'adagrad':
+        return op.Adagrad
+    elif input_value == 'adamw':
+        return op.AdamW
+    elif input_value == 'adamax':
+        return op.Adamax
 
     raise ArgumentTypeError(f'Optimizer {input_value} is not supported.')
 
@@ -290,6 +302,8 @@ def check_loss_type(input_value: str) -> nn.modules.loss:
     """
     if input_value == 'cross_entropy':
         return nn.CrossEntropyLoss()
+    elif input_value == 'multi_margin':
+        return nn.MultiMarginLoss()
 
     raise ArgumentTypeError(f'Loss function {input_value} is not supported.')
 
@@ -300,7 +314,7 @@ def parse_arguments() -> Namespace:
     :return: arguments
     """
     parser = ArgumentParser(description='EEGNet & DeepConvNet')
-    parser.add_argument('-e', '--epochs', default=300, type=int, help='Number of epochs')
+    parser.add_argument('-e', '--epochs', default=150, type=int, help='Number of epochs')
     parser.add_argument('-lr', '--learning_rate', default=1e-2, type=float, help='Learning rate')
     parser.add_argument('-b', '--batch_size', default=64, type=int, help='Batch size')
     parser.add_argument('-o', '--optimizer', default='adam', type=check_optimizer_type, help='Optimizer')
