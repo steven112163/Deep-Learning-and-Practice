@@ -115,7 +115,7 @@ class DeepConvNet(nn.Module):
             ))
 
         self.flatten_size = filters[-1] * reduce(lambda x, _: round((x - 4) / 2), filters[:-1], 373)
-        interval = round((self.flatten_size - 2.0) / 3.0)
+        interval = round((self.flatten_size - 2.0) / 2.0)
         next_layer = self.flatten_size
         features = []
         while next_layer > 2:
