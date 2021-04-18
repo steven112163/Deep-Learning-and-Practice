@@ -115,7 +115,7 @@ class DeepConvNet(nn.Module):
             ))
 
         self.flatten_size = filters[-1] * reduce(lambda x, _: round((x - 4) / 2), filters[:-1], 373)
-        interval = round((self.flatten_size - 2.0) / 7.0)
+        interval = round((self.flatten_size - 2.0) / 3.0)
         next_layer = self.flatten_size
         features = []
         while next_layer > 2:
@@ -128,6 +128,8 @@ class DeepConvNet(nn.Module):
             layers.append((f'linear_{idx}', nn.Linear(in_features=in_features,
                                                       out_features=features[idx + 1],
                                                       bias=True)))
+            if idx != len(features) - 2:
+                layers.append((f'activation_{idx}', activation()))
         self.classify = nn.Sequential(OrderedDict(layers))
 
     def forward(self, inputs: TensorDataset) -> Tensor:
@@ -142,39 +144,29 @@ class DeepConvNet(nn.Module):
         return self.classify(partial_results)
 
 
-def show_results(epochs: int, accuracy: Dict[str, dict], eeg_keys: List[str], deep_keys: List[str]) -> None:
+def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], keys: List[str]) -> None:
     """
     Show accuracy results
+    :param target_model: target training model
     :param epochs: number of epochs
     :param accuracy: training and testing accuracy of different activation functions
-    :param eeg_keys: names of EEGNet with different activation functions
-    :param deep_keys: names of DeepConvNet with different activation functions
+    :param keys: names of neural network with different activation functions
     :return: None
     """
-    longest = len(max(eeg_keys + deep_keys, key=len)) + 6
+    # Get the number of characters of the longest neural network name
+    longest = len(max(keys, key=len)) + 6
 
-    # Plot EGGNet
+    # Plot
     plt.figure(0)
-    plt.title('Activation Function Comparison (EEGNet)')
+    if target_model == 'EEG':
+        plt.title('Activation Function Comparison (EEGNet)')
+    else:
+        plt.title('Activation Function Comparison (DeepConvNet)')
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy (%)')
 
     for train_or_test, acc in accuracy.items():
-        for model in eeg_keys:
-            plt.plot(range(epochs), acc[model], label=f'{model}_{train_or_test}')
-            spaces = ''.join([' ' for _ in range(longest - len(f'{model}_{train_or_test}'))])
-            print(f'{model}_{train_or_test}: {spaces}{max(acc[model]):.2f} %')
-
-    plt.legend(loc='lower right')
-
-    # Plot DeepConvNet
-    plt.figure(1)
-    plt.title('Activation Function Comparison (DeepConvNet)')
-    plt.xlabel('Epoch')
-    plt.ylabel('Accuracy (%)')
-
-    for train_or_test, acc in accuracy.items():
-        for model in deep_keys:
+        for model in keys:
             plt.plot(range(epochs), acc[model], label=f'{model}_{train_or_test}')
             spaces = ''.join([' ' for _ in range(longest - len(f'{model}_{train_or_test}'))])
             print(f'{model}_{train_or_test}: {spaces}{max(acc[model]):.2f} %')
@@ -183,10 +175,12 @@ def show_results(epochs: int, accuracy: Dict[str, dict], eeg_keys: List[str], de
     plt.show()
 
 
-def train(epochs: int, learning_rate: float, batch_size: int, optimizer: op, loss_function: nn.modules.loss,
-          train_device: device, train_dataset: TensorDataset, test_dataset: TensorDataset, verbosity: int) -> None:
+def train(target_model: str, epochs: int, learning_rate: float, batch_size: int, optimizer: op,
+          loss_function: nn.modules.loss, train_device: device, train_dataset: TensorDataset,
+          test_dataset: TensorDataset, verbosity: int) -> None:
     """
     Train the models
+    :param target_model: target training model
     :param epochs: number of epochs
     :param learning_rate: learning rate
     :param batch_size: batch size
@@ -200,21 +194,25 @@ def train(epochs: int, learning_rate: float, batch_size: int, optimizer: op, los
     """
     # Setup models for different activation functions
     info_log('Setup models', verbosity=verbosity)
-    models = {
-        'EEG_ELU': EEGNet(nn.ELU).to(train_device),
-        'EEG_ReLU': EEGNet(nn.ReLU).to(train_device),
-        'EEG_LeakyReLU': EEGNet(nn.LeakyReLU).to(train_device),
-        'Deep_ELU': DeepConvNet(nn.ELU).to(train_device),
-        'Deep_ReLU': DeepConvNet(nn.ReLU).to(train_device),
-        'Deep_LeakyReLU': DeepConvNet(nn.LeakyReLU).to(train_device)
-    }
+    if target_model == 'EEG':
+        models = {
+            'EEG_ELU': EEGNet(nn.ELU).to(train_device),
+            'EEG_ReLU': EEGNet(nn.ReLU).to(train_device),
+            'EEG_LeakyReLU': EEGNet(nn.LeakyReLU).to(train_device)
+        }
+    else:
+        models = {
+            'Deep_ELU': DeepConvNet(nn.ELU).to(train_device),
+            'Deep_ReLU': DeepConvNet(nn.ReLU).to(train_device),
+            'Deep_LeakyReLU': DeepConvNet(nn.LeakyReLU).to(train_device)
+        }
 
     # Setup accuracy structure
-    eeg_keys = ['EEG_ELU', 'EEG_ReLU', 'EEG_LeakyReLU']
-    deep_keys = ['Deep_ELU', 'Deep_ReLU', 'Deep_LeakyReLU']
+    info_log('Setup accuracy structure', verbosity=verbosity)
+    keys = [f'{target_model}_ELU', f'{target_model}_ReLU', f'{target_model}_LeakyReLU']
     accuracy = {
-        'train': {key: [0 for _ in range(epochs)] for key in eeg_keys + deep_keys},
-        'test': {key: [0 for _ in range(epochs)] for key in eeg_keys + deep_keys}
+        'train': {key: [0 for _ in range(epochs)] for key in keys},
+        'test': {key: [0 for _ in range(epochs)] for key in keys}
     }
 
     # Start training
@@ -256,9 +254,9 @@ def train(epochs: int, learning_rate: float, batch_size: int, optimizer: op, los
                     accuracy['test'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
                 accuracy['test'][key][epoch] = 100.0 * accuracy['test'][key][epoch] / len(test_dataset)
         print()
+        cuda.empty_cache()
 
-    cuda.empty_cache()
-    show_results(epochs=epochs, accuracy=accuracy, eeg_keys=eeg_keys, deep_keys=deep_keys)
+    show_results(target_model=target_model, epochs=epochs, accuracy=accuracy, keys=keys)
 
 
 def info_log(log: str, verbosity: int) -> None:
@@ -283,6 +281,18 @@ def check_verbosity_type(input_value: str) -> int:
     if int_value != 0 and int_value != 1:
         raise ArgumentTypeError(f'Verbosity should be 0 or 1.')
     return int_value
+
+
+def check_model_type(input_value: str) -> op:
+    """
+    Check whether the model is eeg or deep
+    :param input_value: input string value
+    :return: model type
+    """
+    if input_value != 'EEG' and input_value != 'Deep':
+        raise ArgumentTypeError(f'Only "EEG" and "Deep" are supported.')
+
+    return input_value
 
 
 def check_optimizer_type(input_value: str) -> op:
@@ -313,8 +323,6 @@ def check_loss_type(input_value: str) -> nn.modules.loss:
     """
     if input_value == 'cross_entropy':
         return nn.CrossEntropyLoss()
-    elif input_value == 'multi_margin':
-        return nn.MultiMarginLoss()
 
     raise ArgumentTypeError(f'Loss function {input_value} is not supported.')
 
@@ -325,6 +333,7 @@ def parse_arguments() -> Namespace:
     :return: arguments
     """
     parser = ArgumentParser(description='EEGNet & DeepConvNet')
+    parser.add_argument('-m', '--model', default='EEG', type=check_model_type, help='EEGNet or DeepConvNet')
     parser.add_argument('-e', '--epochs', default=150, type=int, help='Number of epochs')
     parser.add_argument('-lr', '--learning_rate', default=1e-2, type=float, help='Learning rate')
     parser.add_argument('-b', '--batch_size', default=64, type=int, help='Batch size')
@@ -342,12 +351,19 @@ def main() -> None:
     """
     # Parse arguments
     arguments = parse_arguments()
+    model = arguments.model
     epochs = arguments.epochs
     learning_rate = arguments.learning_rate
     batch_size = arguments.batch_size
     optimizer = arguments.optimizer
     loss_function = arguments.loss_function
     verbosity = arguments.verbosity
+    info_log(f'Model: {model}', verbosity=verbosity)
+    info_log(f'Epochs: {epochs}', verbosity=verbosity)
+    info_log(f'Learning rate: {learning_rate}', verbosity=verbosity)
+    info_log(f'Batch size: {batch_size}', verbosity=verbosity)
+    info_log(f'Optimizer: {optimizer}', verbosity=verbosity)
+    info_log(f'Loss function: {loss_function}', verbosity=verbosity)
 
     # Read data
     info_log('Reading data ...', verbosity=verbosity)
@@ -360,7 +376,8 @@ def main() -> None:
     info_log(f'Training device: {train_device}', verbosity=verbosity)
 
     # Train models
-    train(epochs=epochs,
+    train(target_model=model,
+          epochs=epochs,
           learning_rate=learning_rate,
           batch_size=batch_size,
           optimizer=optimizer,
