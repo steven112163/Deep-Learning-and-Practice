@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 
 
 class EEGNet(nn.Module):
-    def __init__(self, activation: nn.modules.activation):
+    def __init__(self, activation: nn.modules.activation, dropout: float):
         super().__init__()
 
         self.first_conv = nn.Sequential(
@@ -40,7 +40,7 @@ class EEGNet(nn.Module):
             nn.BatchNorm2d(32),
             activation(),
             nn.AvgPool2d(kernel_size=(1, 4), stride=(1, 4), padding=0),
-            nn.Dropout(p=0.25)
+            nn.Dropout(p=dropout)
         )
 
         self.separable_conv = nn.Sequential(
@@ -55,7 +55,7 @@ class EEGNet(nn.Module):
             nn.BatchNorm2d(32),
             activation(),
             nn.AvgPool2d(kernel_size=(1, 8), stride=(1, 8), padding=0),
-            nn.Dropout(p=0.25)
+            nn.Dropout(p=dropout)
         )
 
         self.classify = nn.Sequential(
@@ -76,7 +76,7 @@ class EEGNet(nn.Module):
 
 
 class DeepConvNet(nn.Module):
-    def __init__(self, activation: nn.modules.activation, filters: Tuple[int] = (25, 50, 100, 200)):
+    def __init__(self, activation: nn.modules.activation, dropout: float, filters: Tuple[int] = (25, 50, 100, 200)):
         super().__init__()
 
         self.filters = filters
@@ -98,7 +98,7 @@ class DeepConvNet(nn.Module):
             activation(),
             nn.MaxPool2d(kernel_size=(1, 2)),
             # an input = [1, 25, 1, 373]
-            nn.Dropout(p=0.5)
+            nn.Dropout(p=dropout)
         )
 
         for idx, num_of_filters in enumerate(filters[:-1], start=1):
@@ -111,7 +111,7 @@ class DeepConvNet(nn.Module):
                 nn.BatchNorm2d(filters[idx]),
                 activation(),
                 nn.MaxPool2d(kernel_size=(1, 2)),
-                nn.Dropout(p=0.5)
+                nn.Dropout(p=dropout)
             ))
 
         self.flatten_size = filters[-1] * reduce(lambda x, _: round((x - 4) / 2), filters[:-1], 373)
@@ -176,7 +176,7 @@ def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], keys
 
 
 def train(target_model: str, epochs: int, learning_rate: float, batch_size: int, optimizer: op,
-          loss_function: nn.modules.loss, train_device: device, train_dataset: TensorDataset,
+          loss_function: nn.modules.loss, dropout: float, train_device: device, train_dataset: TensorDataset,
           test_dataset: TensorDataset, verbosity: int) -> None:
     """
     Train the models
@@ -186,6 +186,7 @@ def train(target_model: str, epochs: int, learning_rate: float, batch_size: int,
     :param batch_size: batch size
     :param optimizer: optimizer
     :param loss_function: loss function
+    :param dropout: dropout probability
     :param train_device: training device
     :param train_dataset: training dataset
     :param test_dataset: testing dataset
@@ -196,15 +197,15 @@ def train(target_model: str, epochs: int, learning_rate: float, batch_size: int,
     info_log('Setup models', verbosity=verbosity)
     if target_model == 'EEG':
         models = {
-            'EEG_ELU': EEGNet(nn.ELU).to(train_device),
-            'EEG_ReLU': EEGNet(nn.ReLU).to(train_device),
-            'EEG_LeakyReLU': EEGNet(nn.LeakyReLU).to(train_device)
+            'EEG_ELU': EEGNet(nn.ELU, dropout=dropout).to(train_device),
+            'EEG_ReLU': EEGNet(nn.ReLU, dropout=dropout).to(train_device),
+            'EEG_LeakyReLU': EEGNet(nn.LeakyReLU, dropout=dropout).to(train_device)
         }
     else:
         models = {
-            'Deep_ELU': DeepConvNet(nn.ELU).to(train_device),
-            'Deep_ReLU': DeepConvNet(nn.ReLU).to(train_device),
-            'Deep_LeakyReLU': DeepConvNet(nn.LeakyReLU).to(train_device)
+            'Deep_ELU': DeepConvNet(nn.ELU, dropout=dropout).to(train_device),
+            'Deep_ReLU': DeepConvNet(nn.ReLU, dropout=dropout).to(train_device),
+            'Deep_LeakyReLU': DeepConvNet(nn.LeakyReLU, dropout=dropout).to(train_device)
         }
 
     # Setup accuracy structure
@@ -339,6 +340,7 @@ def parse_arguments() -> Namespace:
     parser.add_argument('-b', '--batch_size', default=64, type=int, help='Batch size')
     parser.add_argument('-o', '--optimizer', default='adam', type=check_optimizer_type, help='Optimizer')
     parser.add_argument('-lf', '--loss_function', default='cross_entropy', type=check_loss_type, help='Loss function')
+    parser.add_argument('-d', '--dropout', default=0.25, type=float, help='Dropout probability')
     parser.add_argument('-v', '--verbosity', default=0, type=check_verbosity_type, help='Whether to show info log')
 
     return parser.parse_args()
@@ -357,6 +359,7 @@ def main() -> None:
     batch_size = arguments.batch_size
     optimizer = arguments.optimizer
     loss_function = arguments.loss_function
+    dropout = arguments.dropout
     verbosity = arguments.verbosity
     info_log(f'Model: {model}', verbosity=verbosity)
     info_log(f'Epochs: {epochs}', verbosity=verbosity)
@@ -364,6 +367,7 @@ def main() -> None:
     info_log(f'Batch size: {batch_size}', verbosity=verbosity)
     info_log(f'Optimizer: {optimizer}', verbosity=verbosity)
     info_log(f'Loss function: {loss_function}', verbosity=verbosity)
+    info_log(f'Dropout: {dropout}', verbosity=verbosity)
 
     # Read data
     info_log('Reading data ...', verbosity=verbosity)
@@ -382,6 +386,7 @@ def main() -> None:
           batch_size=batch_size,
           optimizer=optimizer,
           loss_function=loss_function,
+          dropout=dropout,
           train_device=train_device,
           train_dataset=train_dataset,
           test_dataset=test_dataset,
