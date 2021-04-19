@@ -86,13 +86,15 @@ class DeepConvNet(nn.Module):
             nn.Conv2d(
                 in_channels=1,
                 out_channels=filters[0],
-                kernel_size=(1, 5)
+                kernel_size=(1, 5),
+                bias=False
             ),
             # an input = [1, 25, 2, 746]
             nn.Conv2d(
                 in_channels=filters[0],
                 out_channels=filters[0],
-                kernel_size=(2, 1)
+                kernel_size=(2, 1),
+                bias=False
             ),
             # an input = [1, 25, 1, 746]
             nn.BatchNorm2d(filters[0]),
@@ -107,7 +109,8 @@ class DeepConvNet(nn.Module):
                 nn.Conv2d(
                     in_channels=num_of_filters,
                     out_channels=filters[idx],
-                    kernel_size=(1, 5)
+                    kernel_size=(1, 5),
+                    bias=False
                 ),
                 nn.BatchNorm2d(filters[idx]),
                 activation(),
