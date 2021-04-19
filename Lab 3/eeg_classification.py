@@ -76,7 +76,8 @@ class EEGNet(nn.Module):
 
 
 class DeepConvNet(nn.Module):
-    def __init__(self, activation: nn.modules.activation, dropout: float, num_of_linear: int, filters: Tuple[int] = (25, 50, 100, 200)):
+    def __init__(self, activation: nn.modules.activation, dropout: float, num_of_linear: int,
+                 filters: Tuple[int] = (25, 50, 100, 200)):
         super().__init__()
 
         self.filters = filters
@@ -114,10 +115,11 @@ class DeepConvNet(nn.Module):
                 nn.Dropout(p=dropout)
             ))
 
+        # If num_of_linear == 1, then there are 2 linear layers
         self.flatten_size = filters[-1] * reduce(lambda x, _: round((x - 4) / 2), filters[:-1], 373)
-        interval = round((self.flatten_size - 2.0) / num_of_linear)
-        next_layer = self.flatten_size
-        features = []
+        interval = round((50.0 - 2.0) / num_of_linear)
+        next_layer = 50
+        features = [self.flatten_size]
         while next_layer > 2:
             features.append(next_layer)
             next_layer -= interval
@@ -188,7 +190,7 @@ def train(target_model: str, epochs: int, learning_rate: float, batch_size: int,
     :param optimizer: optimizer
     :param loss_function: loss function
     :param dropout: dropout probability
-    :param num_of_linear: number of linear layers in DeepConvNet
+    :param num_of_linear: number of extra linear layers in DeepConvNet
     :param train_device: training device
     :param train_dataset: training dataset
     :param test_dataset: testing dataset
@@ -274,18 +276,6 @@ def info_log(log: str, verbosity: int) -> None:
         sys.stdout.flush()
 
 
-def check_verbosity_type(input_value: str) -> int:
-    """
-    Check whether verbosity is true or false
-    :param input_value: input string value
-    :return: integer value
-    """
-    int_value = int(input_value)
-    if int_value != 0 and int_value != 1:
-        raise ArgumentTypeError(f'Verbosity should be 0 or 1.')
-    return int_value
-
-
 def check_model_type(input_value: str) -> op:
     """
     Check whether the model is eeg or deep
@@ -330,6 +320,30 @@ def check_loss_type(input_value: str) -> nn.modules.loss:
     raise ArgumentTypeError(f'Loss function {input_value} is not supported.')
 
 
+def check_linear_type(input_value: str) -> int:
+    """
+    Check whether number of extra linear layers is greater than 0
+    :param input_value: input string value
+    :return: integer value
+    """
+    int_value = int(input_value)
+    if int_value < 1:
+        raise ArgumentTypeError(f'Number of extra linear layers should be greater than 0.')
+    return int_value
+
+
+def check_verbosity_type(input_value: str) -> int:
+    """
+    Check whether verbosity is true or false
+    :param input_value: input string value
+    :return: integer value
+    """
+    int_value = int(input_value)
+    if int_value != 0 and int_value != 1:
+        raise ArgumentTypeError(f'Verbosity should be 0 or 1.')
+    return int_value
+
+
 def parse_arguments() -> Namespace:
     """
     Parse arguments
@@ -343,7 +357,8 @@ def parse_arguments() -> Namespace:
     parser.add_argument('-o', '--optimizer', default='adam', type=check_optimizer_type, help='Optimizer')
     parser.add_argument('-lf', '--loss_function', default='cross_entropy', type=check_loss_type, help='Loss function')
     parser.add_argument('-d', '--dropout', default=0.25, type=float, help='Dropout probability')
-    parser.add_argument('-l', '--linear', default=3, type=int, help='Number of linear layers in DeepConvNet')
+    parser.add_argument('-l', '--linear', default=1, type=check_linear_type,
+                        help='Extra linear layers in DeepConvNet (default is 1)')
     parser.add_argument('-v', '--verbosity', default=0, type=check_verbosity_type, help='Whether to show info log')
 
     return parser.parse_args()
@@ -373,7 +388,7 @@ def main() -> None:
     info_log(f'Loss function: {loss_function}', verbosity=verbosity)
     info_log(f'Dropout: {dropout}', verbosity=verbosity)
     if model == 'Deep':
-        info_log(f'Number of linear layers: {num_of_linear}', verbosity=verbosity)
+        info_log(f'Number of linear layers: {num_of_linear + 1}', verbosity=verbosity)
 
     # Read data
     info_log('Reading data ...', verbosity=verbosity)
