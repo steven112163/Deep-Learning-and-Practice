@@ -115,7 +115,7 @@ class DeepConvNet(nn.Module):
             ))
 
         self.flatten_size = filters[-1] * reduce(lambda x, _: round((x - 4) / 2), filters[:-1], 373)
-        interval = round((self.flatten_size - 2.0) / 2.0)
+        interval = round((self.flatten_size - 2.0) / 5.0)
         next_layer = self.flatten_size
         features = []
         while next_layer > 2:
@@ -130,6 +130,7 @@ class DeepConvNet(nn.Module):
                                                       bias=True)))
             if idx != len(features) - 2:
                 layers.append((f'activation_{idx}', activation()))
+                layers.append((f'dropout_{idx}', nn.Dropout(p=dropout)))
         self.classify = nn.Sequential(OrderedDict(layers))
 
     def forward(self, inputs: TensorDataset) -> Tensor:
