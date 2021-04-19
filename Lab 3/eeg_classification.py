@@ -117,8 +117,8 @@ class DeepConvNet(nn.Module):
 
         # If num_of_linear == 1, then there are 2 linear layers
         self.flatten_size = filters[-1] * reduce(lambda x, _: round((x - 4) / 2), filters[:-1], 373)
-        interval = round((50.0 - 2.0) / num_of_linear)
-        next_layer = 50
+        interval = round((100.0 - 2.0) / num_of_linear)
+        next_layer = 100
         features = [self.flatten_size]
         while next_layer > 2:
             features.append(next_layer)
