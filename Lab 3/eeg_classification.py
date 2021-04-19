@@ -132,7 +132,7 @@ class DeepConvNet(nn.Module):
                                                       bias=True)))
             if idx != len(features) - 2:
                 layers.append((f'activation_{idx}', activation()))
-                layers.append((f'dropout_{idx}', nn.Dropout(p=0.25)))
+                layers.append((f'dropout_{idx}', nn.Dropout(p=dropout)))
         self.classify = nn.Sequential(OrderedDict(layers))
 
     def forward(self, inputs: TensorDataset) -> Tensor:
