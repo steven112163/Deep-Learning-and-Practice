@@ -76,7 +76,7 @@ class EEGNet(nn.Module):
 
 
 class DeepConvNet(nn.Module):
-    def __init__(self, activation: nn.modules.activation, dropout: float, filters: Tuple[int] = (25, 50, 100, 200)):
+    def __init__(self, activation: nn.modules.activation, dropout: float, num_of_linear: int, filters: Tuple[int] = (25, 50, 100, 200)):
         super().__init__()
 
         self.filters = filters
@@ -115,7 +115,7 @@ class DeepConvNet(nn.Module):
             ))
 
         self.flatten_size = filters[-1] * reduce(lambda x, _: round((x - 4) / 2), filters[:-1], 373)
-        interval = round((self.flatten_size - 2.0) / 5.0)
+        interval = round((self.flatten_size - 2.0) / num_of_linear)
         next_layer = self.flatten_size
         features = []
         while next_layer > 2:
@@ -130,7 +130,7 @@ class DeepConvNet(nn.Module):
                                                       bias=True)))
             if idx != len(features) - 2:
                 layers.append((f'activation_{idx}', activation()))
-                layers.append((f'dropout_{idx}', nn.Dropout(p=dropout)))
+                layers.append((f'dropout_{idx}', nn.Dropout(p=0.25)))
         self.classify = nn.Sequential(OrderedDict(layers))
 
     def forward(self, inputs: TensorDataset) -> Tensor:
@@ -177,8 +177,8 @@ def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], keys
 
 
 def train(target_model: str, epochs: int, learning_rate: float, batch_size: int, optimizer: op,
-          loss_function: nn.modules.loss, dropout: float, train_device: device, train_dataset: TensorDataset,
-          test_dataset: TensorDataset, verbosity: int) -> None:
+          loss_function: nn.modules.loss, dropout: float, num_of_linear: int, train_device: device,
+          train_dataset: TensorDataset, test_dataset: TensorDataset, verbosity: int) -> None:
     """
     Train the models
     :param target_model: target training model
@@ -188,6 +188,7 @@ def train(target_model: str, epochs: int, learning_rate: float, batch_size: int,
     :param optimizer: optimizer
     :param loss_function: loss function
     :param dropout: dropout probability
+    :param num_of_linear: number of linear layers in DeepConvNet
     :param train_device: training device
     :param train_dataset: training dataset
     :param test_dataset: testing dataset
@@ -204,9 +205,9 @@ def train(target_model: str, epochs: int, learning_rate: float, batch_size: int,
         }
     else:
         models = {
-            'Deep_ELU': DeepConvNet(nn.ELU, dropout=dropout).to(train_device),
-            'Deep_ReLU': DeepConvNet(nn.ReLU, dropout=dropout).to(train_device),
-            'Deep_LeakyReLU': DeepConvNet(nn.LeakyReLU, dropout=dropout).to(train_device)
+            'Deep_ELU': DeepConvNet(nn.ELU, dropout=dropout, num_of_linear=num_of_linear).to(train_device),
+            'Deep_ReLU': DeepConvNet(nn.ReLU, dropout=dropout, num_of_linear=num_of_linear).to(train_device),
+            'Deep_LeakyReLU': DeepConvNet(nn.LeakyReLU, dropout=dropout, num_of_linear=num_of_linear).to(train_device)
         }
 
     # Setup accuracy structure
@@ -342,6 +343,7 @@ def parse_arguments() -> Namespace:
     parser.add_argument('-o', '--optimizer', default='adam', type=check_optimizer_type, help='Optimizer')
     parser.add_argument('-lf', '--loss_function', default='cross_entropy', type=check_loss_type, help='Loss function')
     parser.add_argument('-d', '--dropout', default=0.25, type=float, help='Dropout probability')
+    parser.add_argument('-l', '--linear', default=3, type=int, help='Number of linear layers in DeepConvNet')
     parser.add_argument('-v', '--verbosity', default=0, type=check_verbosity_type, help='Whether to show info log')
 
     return parser.parse_args()
@@ -361,6 +363,7 @@ def main() -> None:
     optimizer = arguments.optimizer
     loss_function = arguments.loss_function
     dropout = arguments.dropout
+    num_of_linear = arguments.linear
     verbosity = arguments.verbosity
     info_log(f'Model: {model}', verbosity=verbosity)
     info_log(f'Epochs: {epochs}', verbosity=verbosity)
@@ -369,6 +372,8 @@ def main() -> None:
     info_log(f'Optimizer: {optimizer}', verbosity=verbosity)
     info_log(f'Loss function: {loss_function}', verbosity=verbosity)
     info_log(f'Dropout: {dropout}', verbosity=verbosity)
+    if model == 'Deep':
+        info_log(f'Number of linear layers: {num_of_linear}', verbosity=verbosity)
 
     # Read data
     info_log('Reading data ...', verbosity=verbosity)
@@ -388,6 +393,7 @@ def main() -> None:
           optimizer=optimizer,
           loss_function=loss_function,
           dropout=dropout,
+          num_of_linear=num_of_linear,
           train_device=train_device,
           train_dataset=train_dataset,
           test_dataset=test_dataset,
