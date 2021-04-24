@@ -1,6 +1,5 @@
 from torch.utils import data
 from torchvision import transforms
-from typing import List, Optional
 import pandas as pd
 import numpy as np
 import os
@@ -19,7 +18,7 @@ def get_data(mode):
 
 
 class RetinopathyLoader(data.Dataset):
-    def __init__(self, root: str, mode: str, transformations: Optional[List[transforms.transforms]] = None):
+    def __init__(self, root: str, mode: str, transformations=None):
         """
         Args:
             root (string): Root path of the dataset.
@@ -33,10 +32,10 @@ class RetinopathyLoader(data.Dataset):
         self.mode = mode
         trans = []
         if transformations:
-            trans.append(transformations)
+            trans += transformations
         trans.append(transforms.ToTensor())
         self.transform = transforms.Compose(trans)
-        print("> Found %d images..." % (len(self.img_name)))
+        print("> Found %d images ..." % (len(self.img_name)))
 
     def __len__(self):
         """'return the size of dataset"""
@@ -62,7 +61,7 @@ class RetinopathyLoader(data.Dataset):
                          
             step4. Return processed image and label
         """
-        path = os.path.join(self.root, self.img_name[index] + '.jpeg')
+        path = os.path.join(self.root, f'{self.img_name[index]}.jpeg')
         img = self.transform(PIL.Image.open(path))
         label = self.label[index]
 

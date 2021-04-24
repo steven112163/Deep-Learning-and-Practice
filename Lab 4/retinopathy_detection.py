@@ -1,13 +1,14 @@
 from dataloader import RetinopathyLoader
 from torch import Tensor, device, cuda, no_grad
+from torch import max as tensor_max
 from torch.utils.data import TensorDataset, DataLoader
 from torchvision import transforms
-from torchvision.models.utils import load_state_dict_from_url
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
-from typing import Optional, Type, Union, List
+from typing import Optional, Type, Union, List, Dict
 import sys
 import torch.nn as nn
 import torch.optim as op
+import torchvision.models as torch_models
 import matplotlib.pyplot as plt
 
 
@@ -20,6 +21,7 @@ class BasicBlock(nn.Module):
     def __init__(self, channels: int, stride: int = 1, down_sample: Optional[nn.Module] = None):
         super(BasicBlock, self).__init__()
 
+        self.activation = nn.ReLU(inplace=True)
         self.block = nn.Sequential(
             nn.Conv2d(
                 in_channels=channels,
@@ -36,7 +38,6 @@ class BasicBlock(nn.Module):
                 bias=False),
             nn.BatchNorm2d(channels),
         )
-        self.activation = nn.ReLU(inplace=True)
         self.down_sample = down_sample
 
     def forward(self, inputs: TensorDataset) -> Tensor:
@@ -66,6 +67,7 @@ class BottleneckBlock(nn.Module):
         super(BottleneckBlock, self).__init__()
 
         external_channels = channels * self.expansion
+        self.activation = nn.ReLU(inplace=True)
         self.block = nn.Sequential(
             nn.Conv2d(in_channels=external_channels,
                       out_channels=channels,
@@ -86,7 +88,6 @@ class BottleneckBlock(nn.Module):
                       bias=False),
             nn.BatchNorm2d(external_channels),
         )
-        self.activation = nn.ReLU(inplace=True)
         self.down_sample = down_sample
 
     def forward(self, inputs: TensorDataset) -> Tensor:
@@ -111,33 +112,27 @@ class ResNet(nn.Module):
         super(ResNet, self).__init__()
 
         if pretrain:
-            model_urls = {
-                'resnet_18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
-                'resnet_50': 'https://download.pytorch.org/models/resnet50-19c8e357.pth'
-            }
-
-            layers_dict = load_state_dict_from_url(model_urls[architecture])
-
+            pretrained_resnet = getattr(torch_models, architecture)(pretrained=True)
             self.conv_1 = nn.Sequential(
-                layers_dict['conv1'],
-                layers_dict['bn1'],
-                layers_dict['relu'],
-                layers_dict['maxpool']
+                getattr(pretrained_resnet, 'conv1'),
+                getattr(pretrained_resnet, 'bn1'),
+                getattr(pretrained_resnet, 'relu'),
+                getattr(pretrained_resnet, 'maxpool')
             )
 
             # Layers
-            self.conv_2 = layers_dict['layer1']
-            self.conv_3 = layers_dict['layer2']
-            self.conv_4 = layers_dict['layer3']
-            self.conv_5 = layers_dict['layer4']
+            self.conv_2 = getattr(pretrained_resnet, 'layer1')
+            self.conv_3 = getattr(pretrained_resnet, 'layer2')
+            self.conv_4 = getattr(pretrained_resnet, 'layer3')
+            self.conv_5 = getattr(pretrained_resnet, 'layer4')
 
             self.classify = nn.Sequential(
-                layers_dict['avgpool'],
+                getattr(pretrained_resnet, 'avgpool'),
                 nn.Flatten(),
-                nn.Linear(layers_dict['fc'].in_features, out_features=5)
+                nn.Linear(getattr(pretrained_resnet, 'fc').in_features, out_features=5)
             )
 
-            del layers_dict
+            del pretrained_resnet
         else:
             self.current_channels = 64
 
@@ -228,16 +223,137 @@ def resnet_18(pretrain: bool = False) -> ResNet:
     :param pretrain: whether use pretrained model
     :return: ResNet18
     """
-    return ResNet(architecture='resnet_18', block=BasicBlock, layers=[2, 2, 2, 2], pretrain=pretrain)
+    return ResNet(architecture='resnet18', block=BasicBlock, layers=[2, 2, 2, 2], pretrain=pretrain)
 
 
-def res_net_50(pretrain: bool = False) -> ResNet:
+def resnet_50(pretrain: bool = False) -> ResNet:
     """
     Get ResNet50
     :param pretrain: whether use pretrained model
     :return: ResNet50
     """
-    return ResNet(architecture='resnet_50', block=BottleneckBlock, layers=[3, 4, 6, 3], pretrain=pretrain)
+    return ResNet(architecture='resnet50', block=BottleneckBlock, layers=[3, 4, 6, 3], pretrain=pretrain)
+
+
+def show_results(epochs: int, accuracy: Dict[str, dict], keys: List[str]) -> None:
+    """
+    Show accuracy results
+    :param epochs: number of epochs
+    :param accuracy: training and testing accuracy of different ResNets
+    :param keys: names of ResNet w/ or w/o pretraining
+    :return: None
+    """
+    # Get the number of characters of the longest ResNet name
+    longest = len(max(keys, key=len)) + 6
+
+    # Plot ResNet18
+    plt.figure(0)
+    plt.title('Result Comparison (ResNet18)')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy (%)')
+
+    for train_or_test, acc in accuracy.items():
+        for model in keys[:2]:
+            plt.plot(range(epochs), acc[model], label=f'{model}_{train_or_test}')
+            spaces = ''.join([' ' for _ in range(longest - len(f'{model}_{train_or_test}'))])
+            print(f'{model}_{train_or_test}: {spaces}{max(acc[model]):.2f} %')
+
+    plt.legend(loc='lower right')
+
+    # Plot ResNet50
+    plt.figure(1)
+    plt.title('Result Comparison (ResNet50)')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy (%)')
+
+    for train_or_test, acc in accuracy.items():
+        for model in keys[2:]:
+            plt.plot(range(epochs), acc[model], label=f'{model}_{train_or_test}')
+            spaces = ''.join([' ' for _ in range(longest - len(f'{model}_{train_or_test}'))])
+            print(f'{model}_{train_or_test}: {spaces}{max(acc[model]):.2f} %')
+
+    plt.legend(loc='lower right')
+
+    plt.show()
+
+
+def train(batch_size: int, learning_rate: float, epochs: int, optimizer: op, momentum: float, weight_decay: float,
+          train_device: device, train_dataset: RetinopathyLoader, test_dataset: RetinopathyLoader) -> None:
+    """
+    Train the models
+    :return: None
+    """
+    # Setup models w/ or w/o pretraining
+    info_log('Setup models ...')
+    keys = [
+        'ResNet18 (w/ pretraining)',
+        'ResNet18 (w/o pretraining)',
+        'ResNet50 (w/ pretraining)',
+        'ResNet50 (w/o pretraining)'
+    ]
+    models = {
+        keys[0]: resnet_18(pretrain=True).to(train_device),
+        keys[1]: resnet_18().to(train_device),
+        keys[2]: resnet_50(pretrain=True).to(train_device),
+        keys[3]: resnet_50().to(train_device)
+    }
+
+    # Setup accuracy structure
+    info_log('Setup accuracy structure ...')
+    accuracy = {
+        'train': {key: [0 for _ in range(epochs)] for key in keys},
+        'test': {key: [0 for _ in range(epochs)] for key in keys}
+    }
+
+    # Start training
+    info_log('Start training')
+    train_loader = DataLoader(train_dataset, batch_size=batch_size)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size)
+    for key, model in models.items():
+        info_log(f'Training {key} ...')
+        if optimizer is op.SGD:
+            model_optimizer = optimizer(model.parameters(), lr=learning_rate, momentum=momentum,
+                                        weight_decay=weight_decay)
+        else:
+            model_optimizer = optimizer(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+
+        for epoch in range(epochs):
+            sys.stdout.write('\r')
+            sys.stdout.write(f'Epoch: {epoch + 1} / {epochs}')
+            sys.stdout.flush()
+
+            # Train model
+            model.train()
+            for data, label in train_loader:
+                inputs = data.to(train_device)
+                labels = label.to(train_device).long().view(-1)
+
+                pred_labels = model.forward(inputs=inputs)
+
+                model_optimizer.zero_grad()
+                loss = nn.CrossEntropyLoss()(pred_labels, labels)
+                loss.backward()
+                model_optimizer.step()
+
+                accuracy['train'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
+            accuracy['train'][key][epoch] = 100.0 * accuracy['train'][key][epoch] / len(train_dataset)
+
+            # Test model
+            model.eval()
+            with no_grad():
+                for data, label in test_loader:
+                    inputs = data.to(train_device)
+                    labels = label.to(train_device).long()
+
+                    pred_labels = model.forward(inputs=inputs)
+
+                    accuracy['test'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
+                accuracy['test'][key][epoch] = 100.0 * accuracy['test'][key][epoch] / len(test_dataset)
+        print()
+        cuda.empty_cache()
+
+    # Show results
+    show_results(epochs=epochs, accuracy=accuracy, keys=keys)
 
 
 def info_log(log: str) -> None:
@@ -336,6 +452,17 @@ def main() -> None:
     # Get training device
     train_device = device("cuda" if cuda.is_available() else "cpu")
     info_log(f'Training device: {train_device}')
+
+    # Train models
+    train(batch_size=batch_size,
+          learning_rate=learning_rate,
+          epochs=epochs,
+          optimizer=optimizer,
+          momentum=momentum,
+          weight_decay=weight_decay,
+          train_device=train_device,
+          train_dataset=train_dataset,
+          test_dataset=test_dataset)
 
 
 if __name__ == '__main__':
