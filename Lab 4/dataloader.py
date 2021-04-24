@@ -1,6 +1,6 @@
 from torch.utils import data
 from torchvision import transforms
-from typing import List
+from typing import List, Optional
 import pandas as pd
 import numpy as np
 import os
@@ -19,7 +19,7 @@ def get_data(mode):
 
 
 class RetinopathyLoader(data.Dataset):
-    def __init__(self, root: str, mode: str, transformations: List[transforms.transforms] or None = None):
+    def __init__(self, root: str, mode: str, transformations: Optional[List[transforms.transforms]] = None):
         """
         Args:
             root (string): Root path of the dataset.
