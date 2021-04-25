@@ -18,25 +18,27 @@ class BasicBlock(nn.Module):
     """
     expansion: int = 1
 
-    def __init__(self, channels: int, stride: int = 1, down_sample: Optional[nn.Module] = None):
+    def __init__(self, in_channels: int, out_channels: int, stride: int = 1, down_sample: Optional[nn.Module] = None):
         super(BasicBlock, self).__init__()
 
         self.activation = nn.ReLU(inplace=True)
         self.block = nn.Sequential(
             nn.Conv2d(
-                in_channels=channels,
-                out_channels=channels,
+                in_channels=in_channels,
+                out_channels=out_channels,
                 kernel_size=3,
                 stride=stride,
+                padding=1,
                 bias=False),
-            nn.BatchNorm2d(channels),
+            nn.BatchNorm2d(out_channels),
             self.activation,
             nn.Conv2d(
-                in_channels=channels,
-                out_channels=channels,
+                in_channels=out_channels,
+                out_channels=out_channels,
                 kernel_size=3,
+                padding=1,
                 bias=False),
-            nn.BatchNorm2d(channels),
+            nn.BatchNorm2d(out_channels),
         )
         self.down_sample = down_sample
 
@@ -63,26 +65,27 @@ class BottleneckBlock(nn.Module):
     """
     expansion: int = 4
 
-    def __init__(self, channels: int, stride: int = 1, down_sample: Optional[nn.Module] = None):
+    def __init__(self, in_channels: int, out_channels: int, stride: int = 1, down_sample: Optional[nn.Module] = None):
         super(BottleneckBlock, self).__init__()
 
-        external_channels = channels * self.expansion
+        external_channels = out_channels * self.expansion
         self.activation = nn.ReLU(inplace=True)
         self.block = nn.Sequential(
-            nn.Conv2d(in_channels=external_channels,
-                      out_channels=channels,
+            nn.Conv2d(in_channels=in_channels,
+                      out_channels=out_channels,
                       kernel_size=1,
                       bias=False),
-            nn.BatchNorm2d(channels),
+            nn.BatchNorm2d(out_channels),
             self.activation,
-            nn.Conv2d(in_channels=channels,
-                      out_channels=channels,
+            nn.Conv2d(in_channels=out_channels,
+                      out_channels=out_channels,
                       kernel_size=3,
                       stride=stride,
+                      padding=1,
                       bias=False),
-            nn.BatchNorm2d(channels),
+            nn.BatchNorm2d(out_channels),
             self.activation,
-            nn.Conv2d(in_channels=channels,
+            nn.Conv2d(in_channels=out_channels,
                       out_channels=external_channels,
                       kernel_size=1,
                       bias=False),
@@ -196,12 +199,13 @@ class ResNet(nn.Module):
             )
 
         layers = [
-            block(channels=in_channels,
+            block(in_channels=self.current_channels,
+                  out_channels=in_channels,
                   stride=stride,
                   down_sample=down_sample)
         ]
         self.current_channels = in_channels * block.expansion
-        layers += [block(channels=in_channels) for _ in range(1, num_of_blocks)]
+        layers += [block(in_channels=self.current_channels, out_channels=in_channels) for _ in range(1, num_of_blocks)]
 
         return nn.Sequential(*layers)
 
@@ -284,21 +288,21 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
     info_log('Setup models ...')
     if target_model == 'ResNet18':
         keys = [
-            'ResNet18 (w/ pretraining)',
-            'ResNet18 (w/o pretraining)'
+            'ResNet18 (w/o pretraining)',
+            'ResNet18 (w/ pretraining)'
         ]
         models = {
-            keys[0]: resnet_18(pretrain=True).to(train_device),
-            keys[1]: resnet_18().to(train_device)
+            keys[0]: resnet_18().to(train_device),
+            keys[1]: resnet_18(pretrain=True).to(train_device)
         }
     else:
         keys = [
-            'ResNet50 (w/ pretraining)',
-            'ResNet50 (w/o pretraining)'
+            'ResNet50 (w/o pretraining)',
+            'ResNet50 (w/ pretraining)'
         ]
         models = {
-            keys[0]: resnet_50(pretrain=True).to(train_device),
-            keys[1]: resnet_50().to(train_device)
+            keys[0]: resnet_50().to(train_device),
+            keys[1]: resnet_50(pretrain=True).to(train_device)
         }
 
     # Setup accuracy structure
