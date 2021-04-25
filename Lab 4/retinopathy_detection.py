@@ -235,9 +235,10 @@ def resnet_50(pretrain: bool = False) -> ResNet:
     return ResNet(architecture='resnet50', block=BottleneckBlock, layers=[3, 4, 6, 3], pretrain=pretrain)
 
 
-def show_results(epochs: int, accuracy: Dict[str, dict], keys: List[str]) -> None:
+def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], keys: List[str]) -> None:
     """
     Show accuracy results
+    :param target_model: ResNet18 or ResNet50
     :param epochs: number of epochs
     :param accuracy: training and testing accuracy of different ResNets
     :param keys: names of ResNet w/ or w/o pretraining
@@ -246,9 +247,9 @@ def show_results(epochs: int, accuracy: Dict[str, dict], keys: List[str]) -> Non
     # Get the number of characters of the longest ResNet name
     longest = len(max(keys, key=len)) + 6
 
-    # Plot ResNet18
+    # Plot
     plt.figure(0)
-    plt.title('Result Comparison (ResNet18)')
+    plt.title(f'Result Comparison ({target_model})')
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy (%)')
 
@@ -259,44 +260,46 @@ def show_results(epochs: int, accuracy: Dict[str, dict], keys: List[str]) -> Non
             print(f'{model}_{train_or_test}: {spaces}{max(acc[model]):.2f} %')
 
     plt.legend(loc='lower right')
-
-    # Plot ResNet50
-    plt.figure(1)
-    plt.title('Result Comparison (ResNet50)')
-    plt.xlabel('Epoch')
-    plt.ylabel('Accuracy (%)')
-
-    for train_or_test, acc in accuracy.items():
-        for model in keys[2:]:
-            plt.plot(range(epochs), acc[model], label=f'{model}_{train_or_test}')
-            spaces = ''.join([' ' for _ in range(longest - len(f'{model}_{train_or_test}'))])
-            print(f'{model}_{train_or_test}: {spaces}{max(acc[model]):.2f} %')
-
-    plt.legend(loc='lower right')
-
     plt.show()
 
 
-def train(batch_size: int, learning_rate: float, epochs: int, optimizer: op, momentum: float, weight_decay: float,
-          train_device: device, train_dataset: RetinopathyLoader, test_dataset: RetinopathyLoader) -> None:
+def train(target_model: str, batch_size: int, learning_rate: float, epochs: int, optimizer: op, momentum: float,
+          weight_decay: float, train_device: device, train_dataset: RetinopathyLoader,
+          test_dataset: RetinopathyLoader) -> None:
     """
     Train the models
+    :param target_model: ResNet18 or ResNet50
+    :param batch_size: batch size
+    :param learning_rate: learning rate
+    :param epochs: number of epochs
+    :param optimizer: optimizer
+    :param momentum: momentum for SGD
+    :param weight_decay: weight decay factor
+    :param train_device: training device (cpu or gpu)
+    :param train_dataset: training dataset
+    :param test_dataset: testing dataset
     :return: None
     """
     # Setup models w/ or w/o pretraining
     info_log('Setup models ...')
-    keys = [
-        'ResNet18 (w/ pretraining)',
-        'ResNet18 (w/o pretraining)',
-        'ResNet50 (w/ pretraining)',
-        'ResNet50 (w/o pretraining)'
-    ]
-    models = {
-        keys[0]: resnet_18(pretrain=True).to(train_device),
-        keys[1]: resnet_18().to(train_device),
-        keys[2]: resnet_50(pretrain=True).to(train_device),
-        keys[3]: resnet_50().to(train_device)
-    }
+    if target_model == 'ResNet18':
+        keys = [
+            'ResNet18 (w/ pretraining)',
+            'ResNet18 (w/o pretraining)'
+        ]
+        models = {
+            keys[0]: resnet_18(pretrain=True).to(train_device),
+            keys[1]: resnet_18().to(train_device)
+        }
+    else:
+        keys = [
+            'ResNet50 (w/ pretraining)',
+            'ResNet50 (w/o pretraining)'
+        ]
+        models = {
+            keys[0]: resnet_50(pretrain=True).to(train_device),
+            keys[1]: resnet_50().to(train_device)
+        }
 
     # Setup accuracy structure
     info_log('Setup accuracy structure ...')
@@ -353,7 +356,7 @@ def train(batch_size: int, learning_rate: float, epochs: int, optimizer: op, mom
         cuda.empty_cache()
 
     # Show results
-    show_results(epochs=epochs, accuracy=accuracy, keys=keys)
+    show_results(target_model=target_model, epochs=epochs, accuracy=accuracy, keys=keys)
 
 
 def info_log(log: str) -> None:
@@ -366,6 +369,21 @@ def info_log(log: str) -> None:
     if verbosity:
         print(f'[\033[96mINFO\033[00m] {log}')
         sys.stdout.flush()
+
+
+def check_model_type(input_value: str) -> str:
+    """
+    Check whether the model is resnet18 or resnet50
+    :param input_value: input string value
+    :return: model name
+    """
+    lowercase_input = input_value.lower()
+    if lowercase_input != 'resnet18' and lowercase_input != 'resnet50':
+        raise ArgumentTypeError('Only "ResNet18" and "ResNet50" are supported.')
+    elif lowercase_input == 'resnet18':
+        return 'ResNet18'
+    else:
+        return 'ResNet50'
 
 
 def check_optimizer_type(input_value: str) -> op:
@@ -408,6 +426,7 @@ def parse_arguments() -> Namespace:
     :return: arguments
     """
     parser = ArgumentParser(description='ResNet')
+    parser.add_argument('-t', '--target_model', default='ResNet18', type=check_model_type, help='ResNet18 or ResNet50')
     parser.add_argument('-b', '--batch_size', default=4, type=int, help='Batch size')
     parser.add_argument('-l', '--learning_rate', default=1e-3, type=float, help='Learning rate')
     parser.add_argument('-e', '--epochs', default=10, type=int, help='Number of epochs')
@@ -426,6 +445,7 @@ def main() -> None:
     """
     # Parse arguments
     arguments = parse_arguments()
+    target_model = arguments.target_model
     batch_size = arguments.batch_size
     learning_rate = arguments.learning_rate
     epochs = arguments.epochs
@@ -434,6 +454,7 @@ def main() -> None:
     weight_decay = arguments.weight_decay
     global verbosity
     verbosity = arguments.verbosity
+    info_log(f'Target model: {target_model}')
     info_log(f'Batch size: {batch_size}')
     info_log(f'Learning rate: {learning_rate}')
     info_log(f'Epochs: {epochs}')
@@ -454,7 +475,8 @@ def main() -> None:
     info_log(f'Training device: {train_device}')
 
     # Train models
-    train(batch_size=batch_size,
+    train(target_model=target_model,
+          batch_size=batch_size,
           learning_rate=learning_rate,
           epochs=epochs,
           optimizer=optimizer,
