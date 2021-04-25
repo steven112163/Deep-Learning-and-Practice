@@ -5,6 +5,7 @@ from torch.utils.data import TensorDataset, DataLoader
 from torchvision import transforms
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
 from typing import Optional, Type, Union, List, Dict
+from tqdm import tqdm
 import sys
 import torch.nn as nn
 import torch.optim as op
@@ -324,11 +325,7 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
         else:
             model_optimizer = optimizer(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-        for epoch in range(epochs):
-            sys.stdout.write('\r')
-            sys.stdout.write(f'Epoch: {epoch + 1} / {epochs}')
-            sys.stdout.flush()
-
+        for epoch in tqdm(range(epochs)):
             # Train model
             model.train()
             for data, label in train_loader:
@@ -344,6 +341,7 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
 
                 accuracy['train'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
             accuracy['train'][key][epoch] = 100.0 * accuracy['train'][key][epoch] / len(train_dataset)
+            info_log(f'Train accuracy: {accuracy["train"][key][epoch]:.2f}%')
 
             # Test model
             model.eval()
@@ -356,6 +354,7 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
 
                     accuracy['test'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
                 accuracy['test'][key][epoch] = 100.0 * accuracy['test'][key][epoch] / len(test_dataset)
+                info_log(f'Test accuracy: {accuracy["test"][key][epoch]:.2f}%')
         print()
         cuda.empty_cache()
 
