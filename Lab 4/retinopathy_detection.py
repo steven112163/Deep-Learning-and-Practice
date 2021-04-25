@@ -369,11 +369,11 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
                 pred_labels = np.array([])
                 for data, label in test_loader:
                     inputs = data.to(train_device)
-                    labels = label.to(train_device).long()
+                    labels = label.to(train_device).long().view(-1)
 
                     outputs = model.forward(inputs=inputs)
                     outputs = tensor_max(outputs, 1)[1]
-                    np.concatenate(pred_labels, outputs.cpu().numpy())
+                    np.concatenate((pred_labels, outputs.cpu().numpy()))
 
                     accuracy['test'][key][epoch] += (outputs == labels).sum().item()
                 accuracy['test'][key][epoch] = 100.0 * accuracy['test'][key][epoch] / len(test_dataset)
