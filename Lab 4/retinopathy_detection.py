@@ -258,24 +258,26 @@ def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], pred
     longest = len(max(keys, key=len)) + 6
 
     # Plot
-    plt.figure(0)
+    fig = plt.figure(0)
     plt.title(f'Result Comparison ({target_model})')
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy (%)')
 
     for train_or_test, acc in accuracy.items():
-        for model in keys[:2]:
+        for model in keys:
             plt.plot(range(epochs), acc[model], label=f'{model}_{train_or_test}')
             spaces = ''.join([' ' for _ in range(longest - len(f'{model}_{train_or_test}'))])
             print(f'{model}_{train_or_test}: {spaces}{max(acc[model]):.2f} %')
 
     plt.legend(loc='lower right')
+    fig.save(f'./results/{target_model}_comparison.png')
 
     for idx, key, pred_labels in enumerate(prediction):
-        plt.figure(idx + 1)
+        fig = plt.figure(idx + 1)
         plt.title(f'Normalized confusion matrix ({key})')
         cm = confusion_matrix(y_true=ground_truth, y_pred=pred_labels, normalize='all')
         ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[0, 1, 2, 3, 4]).plot()
+        fig.save(f'./results/{key}_comparison.png')
 
     plt.show()
 
@@ -353,20 +355,20 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
         max_test_acc = 0
         for epoch in tqdm(range(epochs)):
             # Train model
-            # model.train()
-            # for data, label in train_loader:
-            #     inputs = data.to(train_device)
-            #     labels = label.to(train_device).long().view(-1)
-            #
-            #     pred_labels = model.forward(inputs=inputs)
-            #
-            #     model_optimizer.zero_grad()
-            #     loss = nn.CrossEntropyLoss()(pred_labels, labels)
-            #     loss.backward()
-            #     model_optimizer.step()
-            #
-            #     accuracy['train'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
-            # accuracy['train'][key][epoch] = 100.0 * accuracy['train'][key][epoch] / len(train_dataset)
+            model.train()
+            for data, label in train_loader:
+                inputs = data.to(train_device)
+                labels = label.to(train_device).long().view(-1)
+
+                pred_labels = model.forward(inputs=inputs)
+
+                model_optimizer.zero_grad()
+                loss = nn.CrossEntropyLoss()(pred_labels, labels)
+                loss.backward()
+                model_optimizer.step()
+
+                accuracy['train'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
+            accuracy['train'][key][epoch] = 100.0 * accuracy['train'][key][epoch] / len(train_dataset)
 
             # Test model
             model.eval()
@@ -382,13 +384,10 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
 
                     accuracy['test'][key][epoch] += (outputs == labels).sum().item()
                 accuracy['test'][key][epoch] = 100.0 * accuracy['test'][key][epoch] / len(test_dataset)
-                print(ground_truth)
-                print(pred_labels)
 
                 if accuracy['test'][key][epoch] > max_test_acc:
                     max_test_acc = accuracy['test'][key][epoch]
                     prediction[key] = pred_labels
-                    print(confusion_matrix(y_true=ground_truth, y_pred=pred_labels, normalize='all'))
 
             info_log(f'Train accuracy: {accuracy["train"][key][epoch]:.2f}%')
             info_log(f'Test accuracy: {accuracy["test"][key][epoch]:.2f}%')
