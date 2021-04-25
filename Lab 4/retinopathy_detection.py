@@ -332,11 +332,16 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
         keys[1]: None
     }
 
-    # Start training
-    info_log('Start training')
+    # Load data
+    info_log('Load data ...')
     train_loader = DataLoader(train_dataset, batch_size=batch_size)
     test_loader = DataLoader(test_dataset, batch_size=batch_size)
-    ground_truth = next(iter(test_loader))[1].numpy()
+    ground_truth = np.array([], dtype=int)
+    for _, label in test_loader:
+        ground_truth = np.concatenate((ground_truth, label.long().view(-1).numpy()))
+
+    # Start training
+    info_log('Start training')
     for key, model in models.items():
         info_log(f'Training {key} ...')
         if optimizer is op.SGD:
@@ -354,7 +359,7 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
             #     labels = label.to(train_device).long().view(-1)
             #
             #     pred_labels = model.forward(inputs=inputs)
-            # 
+            #
             #     model_optimizer.zero_grad()
             #     loss = nn.CrossEntropyLoss()(pred_labels, labels)
             #     loss.backward()
@@ -366,14 +371,14 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
             # Test model
             model.eval()
             with no_grad():
-                pred_labels = np.array([])
+                pred_labels = np.array([], dtype=int)
                 for data, label in test_loader:
                     inputs = data.to(train_device)
                     labels = label.to(train_device).long().view(-1)
 
                     outputs = model.forward(inputs=inputs)
                     outputs = tensor_max(outputs, 1)[1]
-                    np.concatenate((pred_labels, outputs.cpu().numpy()))
+                    pred_labels = np.concatenate((pred_labels, outputs.cpu().numpy()))
 
                     accuracy['test'][key][epoch] += (outputs == labels).sum().item()
                 accuracy['test'][key][epoch] = 100.0 * accuracy['test'][key][epoch] / len(test_dataset)
