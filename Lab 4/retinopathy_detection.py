@@ -6,11 +6,13 @@ from torchvision import transforms
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
 from typing import Optional, Type, Union, List, Dict
 from tqdm import tqdm
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import sys
 import torch.nn as nn
 import torch.optim as op
 import torchvision.models as torch_models
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 class BasicBlock(nn.Module):
@@ -240,12 +242,15 @@ def resnet_50(pretrain: bool = False) -> ResNet:
     return ResNet(architecture='resnet50', block=BottleneckBlock, layers=[3, 4, 6, 3], pretrain=pretrain)
 
 
-def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], keys: List[str]) -> None:
+def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], prediction: Dict[str, np.ndarray],
+                 ground_truth: np.ndarray, keys: List[str]) -> None:
     """
     Show accuracy results
     :param target_model: ResNet18 or ResNet50
     :param epochs: number of epochs
     :param accuracy: training and testing accuracy of different ResNets
+    :param prediction: predictions of different ResNets
+    :param ground_truth: ground truth of testing data
     :param keys: names of ResNet w/ or w/o pretraining
     :return: None
     """
@@ -265,6 +270,13 @@ def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], keys
             print(f'{model}_{train_or_test}: {spaces}{max(acc[model]):.2f} %')
 
     plt.legend(loc='lower right')
+
+    for idx, key, pred_labels in enumerate(prediction):
+        plt.figure(idx + 1)
+        plt.title(f'Normalized confusion matrix ({key})')
+        cm = confusion_matrix(y_true=ground_truth, y_pred=pred_labels, normalize='all')
+        ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[0, 1, 2, 3, 4]).plot()
+
     plt.show()
 
 
@@ -313,10 +325,18 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
         'test': {key: [0 for _ in range(epochs)] for key in keys}
     }
 
+    # Setup prediction structure
+    info_log('Setup prediction structure ...')
+    prediction = {
+        keys[0]: None,
+        keys[1]: None
+    }
+
     # Start training
     info_log('Start training')
     train_loader = DataLoader(train_dataset, batch_size=batch_size)
     test_loader = DataLoader(test_dataset, batch_size=batch_size)
+    ground_truth = next(iter(test_loader))[1].numpy()
     for key, model in models.items():
         info_log(f'Training {key} ...')
         if optimizer is op.SGD:
@@ -325,6 +345,7 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
         else:
             model_optimizer = optimizer(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
+        max_test_acc = 0
         for epoch in tqdm(range(epochs)):
             # Train model
             model.train()
@@ -341,25 +362,33 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
 
                 accuracy['train'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
             accuracy['train'][key][epoch] = 100.0 * accuracy['train'][key][epoch] / len(train_dataset)
-            info_log(f'Train accuracy: {accuracy["train"][key][epoch]:.2f}%')
 
             # Test model
             model.eval()
             with no_grad():
+                pred_labels = np.array([])
                 for data, label in test_loader:
                     inputs = data.to(train_device)
                     labels = label.to(train_device).long()
 
-                    pred_labels = model.forward(inputs=inputs)
+                    outputs = model.forward(inputs=inputs)
+                    outputs = tensor_max(outputs, 1)[1]
+                    np.concatenate(pred_labels, outputs.cpu().numpy())
 
-                    accuracy['test'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
+                    accuracy['test'][key][epoch] += (outputs == labels).sum().item()
                 accuracy['test'][key][epoch] = 100.0 * accuracy['test'][key][epoch] / len(test_dataset)
-                info_log(f'Test accuracy: {accuracy["test"][key][epoch]:.2f}%')
+                if accuracy['test'][key][epoch] > max_test_acc:
+                    max_test_acc = accuracy['test'][key][epoch]
+                    prediction[key] = pred_labels
+
+            info_log(f'Train accuracy: {accuracy["train"][key][epoch]:.2f}%')
+            info_log(f'Test accuracy: {accuracy["test"][key][epoch]:.2f}%')
         print()
         cuda.empty_cache()
 
     # Show results
-    show_results(target_model=target_model, epochs=epochs, accuracy=accuracy, keys=keys)
+    show_results(target_model=target_model, epochs=epochs, accuracy=accuracy, prediction=prediction,
+                 ground_truth=ground_truth, keys=keys)
 
 
 def info_log(log: str) -> None:
