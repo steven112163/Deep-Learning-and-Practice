@@ -377,6 +377,9 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
 
                     accuracy['test'][key][epoch] += (outputs == labels).sum().item()
                 accuracy['test'][key][epoch] = 100.0 * accuracy['test'][key][epoch] / len(test_dataset)
+                print(ground_truth)
+                print(pred_labels)
+
                 if accuracy['test'][key][epoch] > max_test_acc:
                     max_test_acc = accuracy['test'][key][epoch]
                     prediction[key] = pred_labels
