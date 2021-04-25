@@ -380,6 +380,7 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
                 if accuracy['test'][key][epoch] > max_test_acc:
                     max_test_acc = accuracy['test'][key][epoch]
                     prediction[key] = pred_labels
+                    print(confusion_matrix(y_true=ground_truth, y_pred=pred_labels, normalize='all'))
 
             info_log(f'Train accuracy: {accuracy["train"][key][epoch]:.2f}%')
             info_log(f'Test accuracy: {accuracy["test"][key][epoch]:.2f}%')
