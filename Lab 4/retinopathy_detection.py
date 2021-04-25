@@ -348,20 +348,20 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
         max_test_acc = 0
         for epoch in tqdm(range(epochs)):
             # Train model
-            model.train()
-            for data, label in train_loader:
-                inputs = data.to(train_device)
-                labels = label.to(train_device).long().view(-1)
-
-                pred_labels = model.forward(inputs=inputs)
-
-                model_optimizer.zero_grad()
-                loss = nn.CrossEntropyLoss()(pred_labels, labels)
-                loss.backward()
-                model_optimizer.step()
-
-                accuracy['train'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
-            accuracy['train'][key][epoch] = 100.0 * accuracy['train'][key][epoch] / len(train_dataset)
+            # model.train()
+            # for data, label in train_loader:
+            #     inputs = data.to(train_device)
+            #     labels = label.to(train_device).long().view(-1)
+            #
+            #     pred_labels = model.forward(inputs=inputs)
+            # 
+            #     model_optimizer.zero_grad()
+            #     loss = nn.CrossEntropyLoss()(pred_labels, labels)
+            #     loss.backward()
+            #     model_optimizer.step()
+            #
+            #     accuracy['train'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
+            # accuracy['train'][key][epoch] = 100.0 * accuracy['train'][key][epoch] / len(train_dataset)
 
             # Test model
             model.eval()
