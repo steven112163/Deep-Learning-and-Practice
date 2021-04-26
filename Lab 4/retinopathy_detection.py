@@ -8,6 +8,7 @@ from typing import Optional, Type, Union, List, Dict
 from tqdm import tqdm
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import sys
+import os
 import torch.nn as nn
 import torch.optim as op
 import torchvision.models as torch_models
@@ -257,8 +258,11 @@ def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], pred
     # Get the number of characters of the longest ResNet name
     longest = len(max(keys, key=len)) + 6
 
+    if not os.path.exists('./results'):
+        os.mkdir('./results')
+
     # Plot
-    fig = plt.figure(0)
+    plt.figure(0)
     plt.title(f'Result Comparison ({target_model})')
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy (%)')
@@ -270,14 +274,15 @@ def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], pred
             print(f'{model}_{train_or_test}: {spaces}{max(acc[model]):.2f} %')
 
     plt.legend(loc='lower right')
-    fig.save(f'./results/{target_model}_comparison.png')
+    plt.tight_layout()
+    plt.savefig(f'./results/{target_model}_comparison.png')
 
-    for idx, key, pred_labels in enumerate(prediction):
-        fig = plt.figure(idx + 1)
-        plt.title(f'Normalized confusion matrix ({key})')
+    for key, pred_labels in prediction.items():
         cm = confusion_matrix(y_true=ground_truth, y_pred=pred_labels, normalize='all')
-        ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[0, 1, 2, 3, 4]).plot()
-        fig.save(f'./results/{key}_comparison.png')
+        ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[0, 1, 2, 3, 4]).plot(cmap=plt.cm.Blues)
+        plt.title(f'Normalized confusion matrix ({key})')
+        plt.tight_layout()
+        plt.savefig(f'./results/{key.replace(" ", "_").replace("/", "_")}_comparison.png')
 
     plt.show()
 
