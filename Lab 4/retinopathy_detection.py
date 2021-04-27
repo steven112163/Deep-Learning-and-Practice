@@ -346,60 +346,58 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
     ground_truth = np.array([], dtype=int)
     for _, label in test_loader:
         ground_truth = np.concatenate((ground_truth, label.long().view(-1).numpy()))
-    prediction[keys[0]] = ground_truth
-    prediction[keys[1]] = ground_truth
 
     # Start training
-    # info_log('Start training')
-    # for key, model in models.items():
-    #     info_log(f'Training {key} ...')
-    #     if optimizer is op.SGD:
-    #         model_optimizer = optimizer(model.parameters(), lr=learning_rate, momentum=momentum,
-    #                                     weight_decay=weight_decay)
-    #     else:
-    #         model_optimizer = optimizer(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-    #
-    #     max_test_acc = 0
-    #     for epoch in tqdm(range(epochs)):
-    #         # Train model
-    #         model.train()
-    #         for data, label in train_loader:
-    #             inputs = data.to(train_device)
-    #             labels = label.to(train_device).long().view(-1)
-    #
-    #             pred_labels = model.forward(inputs=inputs)
-    #
-    #             model_optimizer.zero_grad()
-    #             loss = nn.CrossEntropyLoss()(pred_labels, labels)
-    #             loss.backward()
-    #             model_optimizer.step()
-    #
-    #             accuracy['train'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
-    #         accuracy['train'][key][epoch] = 100.0 * accuracy['train'][key][epoch] / len(train_dataset)
-    #
-    #         # Test model
-    #         model.eval()
-    #         with no_grad():
-    #             pred_labels = np.array([], dtype=int)
-    #             for data, label in test_loader:
-    #                 inputs = data.to(train_device)
-    #                 labels = label.to(train_device).long().view(-1)
-    #
-    #                 outputs = model.forward(inputs=inputs)
-    #                 outputs = tensor_max(outputs, 1)[1]
-    #                 pred_labels = np.concatenate((pred_labels, outputs.cpu().numpy()))
-    #
-    #                 accuracy['test'][key][epoch] += (outputs == labels).sum().item()
-    #             accuracy['test'][key][epoch] = 100.0 * accuracy['test'][key][epoch] / len(test_dataset)
-    #
-    #             if accuracy['test'][key][epoch] > max_test_acc:
-    #                 max_test_acc = accuracy['test'][key][epoch]
-    #                 prediction[key] = pred_labels
-    #
-    #         info_log(f'Train accuracy: {accuracy["train"][key][epoch]:.2f}%')
-    #         info_log(f'Test accuracy: {accuracy["test"][key][epoch]:.2f}%')
-    #     print()
-    #     cuda.empty_cache()
+    info_log('Start training')
+    for key, model in models.items():
+        info_log(f'Training {key} ...')
+        if optimizer is op.SGD:
+            model_optimizer = optimizer(model.parameters(), lr=learning_rate, momentum=momentum,
+                                        weight_decay=weight_decay)
+        else:
+            model_optimizer = optimizer(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+
+        max_test_acc = 0
+        for epoch in tqdm(range(epochs)):
+            # Train model
+            model.train()
+            for data, label in train_loader:
+                inputs = data.to(train_device)
+                labels = label.to(train_device).long().view(-1)
+
+                pred_labels = model.forward(inputs=inputs)
+
+                model_optimizer.zero_grad()
+                loss = nn.CrossEntropyLoss()(pred_labels, labels)
+                loss.backward()
+                model_optimizer.step()
+
+                accuracy['train'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
+            accuracy['train'][key][epoch] = 100.0 * accuracy['train'][key][epoch] / len(train_dataset)
+
+            # Test model
+            model.eval()
+            with no_grad():
+                pred_labels = np.array([], dtype=int)
+                for data, label in test_loader:
+                    inputs = data.to(train_device)
+                    labels = label.to(train_device).long().view(-1)
+
+                    outputs = model.forward(inputs=inputs)
+                    outputs = tensor_max(outputs, 1)[1]
+                    pred_labels = np.concatenate((pred_labels, outputs.cpu().numpy()))
+
+                    accuracy['test'][key][epoch] += (outputs == labels).sum().item()
+                accuracy['test'][key][epoch] = 100.0 * accuracy['test'][key][epoch] / len(test_dataset)
+
+                if accuracy['test'][key][epoch] > max_test_acc:
+                    max_test_acc = accuracy['test'][key][epoch]
+                    prediction[key] = pred_labels
+
+            info_log(f'Train accuracy: {accuracy["train"][key][epoch]:.2f}%')
+            info_log(f'Test accuracy: {accuracy["test"][key][epoch]:.2f}%')
+        print()
+        cuda.empty_cache()
 
     # Show results
     show_results(target_model=target_model, epochs=epochs, accuracy=accuracy, prediction=prediction,
