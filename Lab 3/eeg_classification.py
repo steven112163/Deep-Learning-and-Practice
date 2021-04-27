@@ -237,6 +237,7 @@ def train(target_model: str, epochs: int, learning_rate: float, batch_size: int,
             sys.stdout.flush()
 
             # Train model
+            model.train()
             for data, label in train_loader:
                 inputs = data.to(train_device)
                 labels = label.to(train_device).long()
@@ -252,6 +253,7 @@ def train(target_model: str, epochs: int, learning_rate: float, batch_size: int,
             accuracy['train'][key][epoch] = 100.0 * accuracy['train'][key][epoch] / len(train_dataset)
 
             # Test model
+            model.eval()
             with no_grad():
                 for data, label in test_loader:
                     inputs = data.to(train_device)
