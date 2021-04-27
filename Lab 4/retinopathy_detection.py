@@ -284,8 +284,6 @@ def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], pred
         plt.tight_layout()
         plt.savefig(f'./results/{key.replace(" ", "_").replace("/", "_")}_comparison.png')
 
-    plt.show()
-
 
 def train(target_model: str, batch_size: int, learning_rate: float, epochs: int, optimizer: op, momentum: float,
           weight_decay: float, train_device: device, train_dataset: RetinopathyLoader,
