@@ -136,7 +136,13 @@ class ResNet(nn.Module):
             self.classify = nn.Sequential(
                 getattr(pretrained_resnet, 'avgpool'),
                 nn.Flatten(),
-                nn.Linear(getattr(pretrained_resnet, 'fc').in_features, out_features=5)
+                nn.Linear(getattr(pretrained_resnet, 'fc').in_features, out_features=50),
+                nn.ReLU(inplace=True),
+                nn.Dropout(p=0.5),
+                nn.Linear(in_features=50, out_features=20),
+                nn.ReLU(inplace=True),
+                nn.Dropout(p=0.5),
+                nn.Linear(in_features=20, out_features=5)
             )
 
             del pretrained_resnet
@@ -178,7 +184,13 @@ class ResNet(nn.Module):
             self.classify = nn.Sequential(
                 nn.AdaptiveAvgPool2d((1, 1)),
                 nn.Flatten(),
-                nn.Linear(in_features=512 * block.expansion, out_features=5)
+                nn.Linear(in_features=512 * block.expansion, out_features=50),
+                nn.ReLU(inplace=True),
+                nn.Dropout(p=0.5),
+                nn.Linear(in_features=50, out_features=20),
+                nn.ReLU(inplace=True),
+                nn.Dropout(p=0.5),
+                nn.Linear(in_features=20, out_features=5)
             )
 
     def make_layer(self, block: Type[Union[BasicBlock, BottleneckBlock]], num_of_blocks: int, in_channels: int,
@@ -283,7 +295,7 @@ def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], pred
         ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[0, 1, 2, 3, 4]).plot(cmap=plt.cm.Blues)
         plt.title(f'Normalized confusion matrix ({key})')
         plt.tight_layout()
-        plt.savefig(f'./results/{key.replace(" ", "_").replace("/", "_")}_comparison.png')
+        plt.savefig(f'./results/{key.replace(" ", "_").replace("/", "_")}_confusion.png')
         plt.close()
 
 
@@ -394,8 +406,8 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
                     max_test_acc = accuracy['test'][key][epoch]
                     prediction[key] = pred_labels
 
-            info_log(f'Train accuracy: {accuracy["train"][key][epoch]:.2f}%')
-            info_log(f'Test accuracy: {accuracy["test"][key][epoch]:.2f}%')
+            debug_log(f'Train accuracy: {accuracy["train"][key][epoch]:.2f}%')
+            debug_log(f'Test accuracy: {accuracy["test"][key][epoch]:.2f}%')
         print()
         cuda.empty_cache()
 
@@ -413,6 +425,18 @@ def info_log(log: str) -> None:
     global verbosity
     if verbosity:
         print(f'[\033[96mINFO\033[00m] {log}')
+        sys.stdout.flush()
+
+
+def debug_log(log: str) -> None:
+    """
+    Print debug log
+    :param log: log to be displayed
+    :return: None
+    """
+    global verbosity
+    if verbosity > 1:
+        print(f'[\033[93mDEBUG\033[00m] {log}')
         sys.stdout.flush()
 
 
@@ -460,8 +484,8 @@ def check_verbosity_type(input_value: str) -> int:
     :return: integer value
     """
     int_value = int(input_value)
-    if int_value != 0 and int_value != 1:
-        raise ArgumentTypeError(f'Verbosity should be 0 or 1.')
+    if int_value != 0 and int_value != 1 and int_value != 2:
+        raise ArgumentTypeError(f'Verbosity should be 0, 1 or 2.')
     return int_value
 
 
@@ -478,7 +502,7 @@ def parse_arguments() -> Namespace:
     parser.add_argument('-o', '--optimizer', default='sgd', type=check_optimizer_type, help='Optimizer')
     parser.add_argument('-m', '--momentum', default=0.9, type=float, help='Momentum factor for SGD')
     parser.add_argument('-w', '--weight_decay', default=5e-4, type=float, help='Weight decay (L2 penalty)')
-    parser.add_argument('-v', '--verbosity', default=0, type=check_verbosity_type, help='Whether to show info log')
+    parser.add_argument('-v', '--verbosity', default=0, type=check_verbosity_type, help='Verbosity level')
 
     return parser.parse_args()
 
