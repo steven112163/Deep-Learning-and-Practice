@@ -6,6 +6,7 @@ from argparse import ArgumentParser, ArgumentTypeError, Namespace
 from typing import Dict, List, Tuple
 from functools import reduce
 from collections import OrderedDict
+from tqdm import tqdm
 import sys
 import torch.nn as nn
 import torch.optim as op
@@ -231,11 +232,7 @@ def train(target_model: str, epochs: int, learning_rate: float, batch_size: int,
         info_log(f'Training {key} ...', verbosity=verbosity)
         model_optimizer = optimizer(model.parameters(), lr=learning_rate)
 
-        for epoch in range(epochs):
-            sys.stdout.write('\r')
-            sys.stdout.write(f'Epoch: {epoch + 1} / {epochs}')
-            sys.stdout.flush()
-
+        for epoch in tqdm(range(epochs)):
             # Train model
             model.train()
             for data, label in train_loader:
