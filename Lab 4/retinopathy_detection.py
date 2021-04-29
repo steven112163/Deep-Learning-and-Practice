@@ -299,12 +299,14 @@ def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], pred
         plt.close()
 
 
-def train(target_model: str, batch_size: int, learning_rate: float, epochs: int, optimizer: op, momentum: float,
-          weight_decay: float, train_device: device, train_dataset: RetinopathyLoader,
+def train(target_model: str, comparison: int, pretrain: int, batch_size: int, learning_rate: float, epochs: int,
+          optimizer: op, momentum: float, weight_decay: float, train_device: device, train_dataset: RetinopathyLoader,
           test_dataset: RetinopathyLoader) -> None:
     """
     Train the models
     :param target_model: ResNet18 or ResNet50
+    :param comparison: Whether compare w/ pretraining and w/o pretraining models
+    :param pretrain: Whether use pretrained model when comparison is false
     :param batch_size: batch size
     :param learning_rate: learning rate
     :param epochs: number of epochs
@@ -319,23 +321,39 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
     # Setup models w/ or w/o pretraining
     info_log('Setup models ...')
     if target_model == 'ResNet18':
-        keys = [
-            'ResNet18 (w/o pretraining)',
-            'ResNet18 (w/ pretraining)'
-        ]
-        models = {
-            keys[0]: resnet_18().to(train_device),
-            keys[1]: resnet_18(pretrain=True).to(train_device)
-        }
+        if comparison:
+            keys = [
+                'ResNet18 (w/o pretraining)',
+                'ResNet18 (w/ pretraining)'
+            ]
+            models = {
+                keys[0]: resnet_18().to(train_device),
+                keys[1]: resnet_18(pretrain=True).to(train_device)
+            }
+        else:
+            if pretrain:
+                keys = ['ResNet18 (w/ pretraining)']
+                models = {keys[0]: resnet_18(pretrain=True).to(train_device)}
+            else:
+                keys = ['ResNet18 (w/o pretraining)']
+                models = {keys[0]: resnet_18().to(train_device)}
     else:
-        keys = [
-            'ResNet50 (w/o pretraining)',
-            'ResNet50 (w/ pretraining)'
-        ]
-        models = {
-            keys[0]: resnet_50().to(train_device),
-            keys[1]: resnet_50(pretrain=True).to(train_device)
-        }
+        if comparison:
+            keys = [
+                'ResNet50 (w/o pretraining)',
+                'ResNet50 (w/ pretraining)'
+            ]
+            models = {
+                keys[0]: resnet_50().to(train_device),
+                keys[1]: resnet_50(pretrain=True).to(train_device)
+            }
+        else:
+            if pretrain:
+                keys = ['ResNet50 (w/ pretraining)']
+                models = {keys[0]: resnet_50(pretrain=True).to(train_device)}
+            else:
+                keys = ['ResNet50 (w/o pretraining)']
+                models = {keys[0]: resnet_50().to(train_device)}
 
     # Setup accuracy structure
     info_log('Setup accuracy structure ...')
@@ -346,10 +364,7 @@ def train(target_model: str, batch_size: int, learning_rate: float, epochs: int,
 
     # Setup prediction structure
     info_log('Setup prediction structure ...')
-    prediction = {
-        keys[0]: None,
-        keys[1]: None
-    }
+    prediction = {key: None for key in keys}
 
     # Load data
     info_log('Load data ...')
@@ -455,6 +470,30 @@ def check_model_type(input_value: str) -> str:
         return 'ResNet50'
 
 
+def check_comparison_type(input_value: str) -> int:
+    """
+    Check whether the comparison is 0 or 1
+    :param input_value: input string value
+    :return: integer value
+    """
+    int_value = int(input_value)
+    if int_value != 0 and int_value != 1:
+        raise ArgumentTypeError(f'Comparison should be 0 or 1.')
+    return int_value
+
+
+def check_pretrain_type(input_value: str) -> int:
+    """
+    Check whether the pretrain is 0 or 1
+    :param input_value: input string value
+    :return: integer value
+    """
+    int_value = int(input_value)
+    if int_value != 0 and int_value != 1:
+        raise ArgumentTypeError(f'Pretrain should be 0 or 1.')
+    return int_value
+
+
 def check_optimizer_type(input_value: str) -> op:
     """
     Check whether the optimizer is supported
@@ -496,6 +535,10 @@ def parse_arguments() -> Namespace:
     """
     parser = ArgumentParser(description='ResNet')
     parser.add_argument('-t', '--target_model', default='ResNet18', type=check_model_type, help='ResNet18 or ResNet50')
+    parser.add_argument('-c', '--comparison', default=1, type=check_comparison_type,
+                        help='Whether compare the accuracies of w/ pretraining and w/o pretraining models')
+    parser.add_argument('-p', '--pretrain', default=0, type=check_pretrain_type,
+                        help='Train w/ pretraining model or w/o pretraining model when "comparison" is false')
     parser.add_argument('-b', '--batch_size', default=4, type=int, help='Batch size')
     parser.add_argument('-l', '--learning_rate', default=1e-3, type=float, help='Learning rate')
     parser.add_argument('-e', '--epochs', default=10, type=int, help='Number of epochs')
@@ -515,6 +558,8 @@ def main() -> None:
     # Parse arguments
     arguments = parse_arguments()
     target_model = arguments.target_model
+    comparison = arguments.comparison
+    pretrain = arguments.pretrain
     batch_size = arguments.batch_size
     learning_rate = arguments.learning_rate
     epochs = arguments.epochs
@@ -524,6 +569,8 @@ def main() -> None:
     global verbosity
     verbosity = arguments.verbosity
     info_log(f'Target model: {target_model}')
+    info_log(f'Compare w/ and w/o pretraining: {"True" if comparison else "False"}')
+    info_log(f'Use pretrained model: {"True" if pretrain else "False"}')
     info_log(f'Batch size: {batch_size}')
     info_log(f'Learning rate: {learning_rate}')
     info_log(f'Epochs: {epochs}')
@@ -536,6 +583,7 @@ def main() -> None:
     train_dataset = RetinopathyLoader('./data', 'train', [
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomVerticalFlip(p=0.5),
+        transforms.ColorJitter(brightness=(0, 5), contrast=(0, 5), saturation=(0, 5), hue=(-0.2, 0.2))
     ])
     test_dataset = RetinopathyLoader('./data', 'test')
 
@@ -545,6 +593,8 @@ def main() -> None:
 
     # Train models
     train(target_model=target_model,
+          comparison=comparison,
+          pretrain=pretrain,
           batch_size=batch_size,
           learning_rate=learning_rate,
           epochs=epochs,
