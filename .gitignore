@@ -2,5 +2,5 @@
 *.exe
 *.bin
 __pycache__
-data
+Lab 4/data
 results
