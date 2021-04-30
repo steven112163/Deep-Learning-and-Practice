@@ -1,5 +1,5 @@
 from dataloader import RetinopathyLoader
-from torch import Tensor, device, cuda, no_grad
+from torch import Tensor, device, cuda, no_grad, load, save
 from torch import max as tensor_max
 from torch.utils.data import TensorDataset, DataLoader
 from torchvision import transforms
@@ -14,6 +14,7 @@ import torch.optim as op
 import torchvision.models as torch_models
 import matplotlib.pyplot as plt
 import numpy as np
+import pickle
 
 
 class BasicBlock(nn.Module):
@@ -243,6 +244,29 @@ def resnet_50(pretrain: bool = False) -> ResNet:
     return ResNet(architecture='resnet50', block=BottleneckBlock, layers=[3, 4, 6, 3], pretrain=pretrain)
 
 
+def save_object(obj, name: str) -> None:
+    """
+    Save object
+    :param obj: object to be saved
+    :param name: name of the file
+    :return: None
+    """
+    if not os.path.exists('./model'):
+        os.mkdir('./model')
+    with open(f'./model/{name}.pkl', 'wb') as f:
+        pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
+
+
+def load_object(name: str):
+    """
+    Load object
+    :param name: name of the file
+    :return: the stored object
+    """
+    with open(f'./model/{name}.pkl', 'rb') as f:
+        return pickle.load(f)
+
+
 def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], prediction: Dict[str, np.ndarray],
                  ground_truth: np.ndarray, keys: List[str]) -> None:
     """
@@ -287,14 +311,15 @@ def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], pred
         plt.close()
 
 
-def train(target_model: str, comparison: int, pretrain: int, batch_size: int, learning_rate: float, epochs: int,
-          optimizer: op, momentum: float, weight_decay: float, train_device: device, train_dataset: RetinopathyLoader,
-          test_dataset: RetinopathyLoader) -> None:
+def train(target_model: str, comparison: int, pretrain: int, load_or_not: int, batch_size: int, learning_rate: float,
+          epochs: int, optimizer: op, momentum: float, weight_decay: float, train_device: device,
+          train_dataset: RetinopathyLoader, test_dataset: RetinopathyLoader) -> None:
     """
     Train the models
     :param target_model: ResNet18 or ResNet50
     :param comparison: Whether compare w/ pretraining and w/o pretraining models
     :param pretrain: Whether use pretrained model when comparison is false
+    :param load_or_not: Whether load the stored model and accuracies
     :param batch_size: batch size
     :param learning_rate: learning rate
     :param epochs: number of epochs
@@ -325,6 +350,9 @@ def train(target_model: str, comparison: int, pretrain: int, batch_size: int, le
             else:
                 keys = ['ResNet18 (w/o pretraining)']
                 models = {keys[0]: resnet_18().to(train_device)}
+            if load_or_not:
+                checkpoint = load(f'./model/{target_model}.pt')
+                models[keys[0]].load_state_dict(checkpoint['model_state_dict'])
     else:
         if comparison:
             keys = [
@@ -342,17 +370,27 @@ def train(target_model: str, comparison: int, pretrain: int, batch_size: int, le
             else:
                 keys = ['ResNet50 (w/o pretraining)']
                 models = {keys[0]: resnet_50().to(train_device)}
+            if load_or_not:
+                checkpoint = load(f'./model/{target_model}.pt')
+                models[keys[0]].load_state_dict(checkpoint['model_state_dict'])
 
     # Setup accuracy structure
     info_log('Setup accuracy structure ...')
-    accuracy = {
-        'train': {key: [0 for _ in range(epochs)] for key in keys},
-        'test': {key: [0 for _ in range(epochs)] for key in keys}
-    }
+    if not comparison and load_or_not:
+        last_accuracy = load_object(name='accuracy')
+        accuracy = {
+            'train': {key: last_accuracy['train'][key] + [0 for _ in range(epochs)] for key in keys},
+            'test': {key: last_accuracy['train'][key] + [0 for _ in range(epochs)] for key in keys}
+        }
+    else:
+        accuracy = {
+            'train': {key: [0 for _ in range(epochs)] for key in keys},
+            'test': {key: [0 for _ in range(epochs)] for key in keys}
+        }
 
     # Setup prediction structure
     info_log('Setup prediction structure ...')
-    prediction = {key: None for key in keys}
+    prediction = load_object('prediction') if not comparison and load_or_not else {key: None for key in keys}
 
     # Load data
     info_log('Load data ...')
@@ -362,8 +400,16 @@ def train(target_model: str, comparison: int, pretrain: int, batch_size: int, le
     for _, label in test_loader:
         ground_truth = np.concatenate((ground_truth, label.long().view(-1).numpy()))
 
+    # For storing model
+    stored_check_point = {
+        'epoch': None,
+        'model_state_dict': None,
+        'optimizer_state_dict': None
+    }
+
     # Start training
     info_log('Start training')
+    last_epoch = checkpoint['epoch'] if not comparison and load_or_not else 0
     for key, model in models.items():
         info_log(f'Training {key} ...')
         if optimizer is op.SGD:
@@ -372,8 +418,11 @@ def train(target_model: str, comparison: int, pretrain: int, batch_size: int, le
         else:
             model_optimizer = optimizer(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
+        if not comparison and load_or_not:
+            model_optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
         max_test_acc = 0
-        for epoch in tqdm(range(epochs)):
+        for epoch in tqdm(range(last_epoch, epochs + last_epoch)):
             # Train model
             model.train()
             for data, label in train_loader:
@@ -412,10 +461,19 @@ def train(target_model: str, comparison: int, pretrain: int, batch_size: int, le
             debug_log(f'Train accuracy: {accuracy["train"][key][epoch]:.2f}%')
             debug_log(f'Test accuracy: {accuracy["test"][key][epoch]:.2f}%')
         print()
+        if not comparison:
+            if not os.path.exists('./model'):
+                os.mkdir('./model')
+            stored_check_point['epoch'] = last_epoch + epochs
+            stored_check_point['model_state_dict'] = model.state_dict()
+            stored_check_point['optimizer_state_dict'] = model_optimizer.state_dict()
+            save(stored_check_point, f'./model/{target_model}.pt')
+            save_object(obj=accuracy, name='accuracy')
+            save_object(obj=prediction, name='prediction')
         cuda.empty_cache()
 
     # Show results
-    show_results(target_model=target_model, epochs=epochs, accuracy=accuracy, prediction=prediction,
+    show_results(target_model=target_model, epochs=last_epoch + epochs, accuracy=accuracy, prediction=prediction,
                  ground_truth=ground_truth, keys=keys)
 
 
@@ -482,6 +540,18 @@ def check_pretrain_type(input_value: str) -> int:
     return int_value
 
 
+def check_load_type(input_value: str) -> int:
+    """
+    Check whether the load is 0 or 1
+    :param input_value: input string value
+    :return: integer value
+    """
+    int_value = int(input_value)
+    if int_value != 0 and int_value != 1:
+        raise ArgumentTypeError(f'Load should be 0 or 1.')
+    return int_value
+
+
 def check_optimizer_type(input_value: str) -> op:
     """
     Check whether the optimizer is supported
@@ -527,8 +597,10 @@ def parse_arguments() -> Namespace:
                         help='Whether compare the accuracies of w/ pretraining and w/o pretraining models')
     parser.add_argument('-p', '--pretrain', default=0, type=check_pretrain_type,
                         help='Train w/ pretraining model or w/o pretraining model when "comparison" is false')
+    parser.add_argument('-l', '--load', default=0, type=check_load_type,
+                        help='Whether load the stored model and accuracies')
     parser.add_argument('-b', '--batch_size', default=4, type=int, help='Batch size')
-    parser.add_argument('-l', '--learning_rate', default=1e-3, type=float, help='Learning rate')
+    parser.add_argument('-lr', '--learning_rate', default=1e-3, type=float, help='Learning rate')
     parser.add_argument('-e', '--epochs', default=10, type=int, help='Number of epochs')
     parser.add_argument('-o', '--optimizer', default='sgd', type=check_optimizer_type, help='Optimizer')
     parser.add_argument('-m', '--momentum', default=0.9, type=float, help='Momentum factor for SGD')
@@ -548,6 +620,7 @@ def main() -> None:
     target_model = arguments.target_model
     comparison = arguments.comparison
     pretrain = arguments.pretrain
+    load_or_not = arguments.load
     batch_size = arguments.batch_size
     learning_rate = arguments.learning_rate
     epochs = arguments.epochs
@@ -559,6 +632,7 @@ def main() -> None:
     info_log(f'Target model: {target_model}')
     info_log(f'Compare w/ and w/o pretraining: {"True" if comparison else "False"}')
     info_log(f'Use pretrained model: {"True" if pretrain else "False"}')
+    info_log(f'Use loaded model: {"True" if load_or_not else "False"}')
     info_log(f'Batch size: {batch_size}')
     info_log(f'Learning rate: {learning_rate}')
     info_log(f'Epochs: {epochs}')
@@ -583,6 +657,7 @@ def main() -> None:
     train(target_model=target_model,
           comparison=comparison,
           pretrain=pretrain,
+          load_or_not=load_or_not,
           batch_size=batch_size,
           learning_rate=learning_rate,
           epochs=epochs,
