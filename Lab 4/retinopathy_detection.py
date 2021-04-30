@@ -136,12 +136,9 @@ class ResNet(nn.Module):
             self.classify = nn.Sequential(
                 getattr(pretrained_resnet, 'avgpool'),
                 nn.Flatten(),
-                nn.Linear(getattr(pretrained_resnet, 'fc').in_features, out_features=50),
+                nn.Linear(getattr(pretrained_resnet, 'fc').in_features, out_features=20),
                 nn.ReLU(inplace=True),
-                nn.Dropout(p=0.5),
-                nn.Linear(in_features=50, out_features=20),
-                nn.ReLU(inplace=True),
-                nn.Dropout(p=0.5),
+                nn.Dropout(p=0.25),
                 nn.Linear(in_features=20, out_features=5)
             )
 
@@ -184,10 +181,7 @@ class ResNet(nn.Module):
             self.classify = nn.Sequential(
                 nn.AdaptiveAvgPool2d((1, 1)),
                 nn.Flatten(),
-                nn.Linear(in_features=512 * block.expansion, out_features=50),
-                nn.ReLU(inplace=True),
-                nn.Dropout(p=0.25),
-                nn.Linear(in_features=50, out_features=20),
+                nn.Linear(in_features=512 * block.expansion, out_features=20),
                 nn.ReLU(inplace=True),
                 nn.Dropout(p=0.25),
                 nn.Linear(in_features=20, out_features=5)
