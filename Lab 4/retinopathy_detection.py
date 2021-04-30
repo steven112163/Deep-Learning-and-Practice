@@ -136,10 +136,7 @@ class ResNet(nn.Module):
             self.classify = nn.Sequential(
                 getattr(pretrained_resnet, 'avgpool'),
                 nn.Flatten(),
-                nn.Linear(getattr(pretrained_resnet, 'fc').in_features, out_features=20),
-                nn.ReLU(inplace=True),
-                nn.Dropout(p=0.25),
-                nn.Linear(in_features=20, out_features=5)
+                nn.Linear(getattr(pretrained_resnet, 'fc').in_features, out_features=5)
             )
 
             del pretrained_resnet
@@ -181,10 +178,7 @@ class ResNet(nn.Module):
             self.classify = nn.Sequential(
                 nn.AdaptiveAvgPool2d((1, 1)),
                 nn.Flatten(),
-                nn.Linear(in_features=512 * block.expansion, out_features=20),
-                nn.ReLU(inplace=True),
-                nn.Dropout(p=0.25),
-                nn.Linear(in_features=20, out_features=5)
+                nn.Linear(in_features=512 * block.expansion, out_features=5)
             )
 
     def make_layer(self, block: Type[Union[BasicBlock, BottleneckBlock]], num_of_blocks: int, in_channels: int,
@@ -577,7 +571,7 @@ def main() -> None:
     train_dataset = RetinopathyLoader('./data', 'train', [
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomVerticalFlip(p=0.5),
-        transforms.ColorJitter(brightness=(0, 5), contrast=(0, 5), saturation=(0, 5), hue=(-0.2, 0.2))
+        transforms.ColorJitter(brightness=(0, 2), contrast=(0, 2), saturation=(0, 2), hue=(-0.1, 0.1))
     ])
     test_dataset = RetinopathyLoader('./data', 'test')
 
