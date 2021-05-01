@@ -1,5 +1,6 @@
 from io import open
 from torch import optim, device, Tensor, LongTensor, cat, randn, exp
+from torch.utils.data import Dataset
 from os import system
 from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
@@ -66,6 +67,60 @@ class CharDict:
             elif char == 'EOS':
                 break
         return original_string
+
+
+class TenseLoader(Dataset):
+    def __init__(self, mode: str):
+        if mode == 'train':
+            file = './data/train.txt'
+        else:
+            file = './data/test.txt'
+
+        self.data = np.loadtxt(file, dtype=np.str)
+
+        if mode == 'train':
+            self.data = self.data.reshape(-1)
+        else:
+            # sp, tp, pg, p
+            # sp -> p
+            # sp -> pg
+            # sp -> tp
+            # sp -> tp
+            # p  -> tp
+            # sp -> pg
+            # p  -> sp
+            # pg -> sp
+            # pg -> p
+            # pg -> tp
+            self.targets = np.array([
+                [0, 3],
+                [0, 2],
+                [0, 1],
+                [0, 1],
+                [3, 1],
+                [0, 2],
+                [3, 0],
+                [2, 0],
+                [2, 3],
+                [2, 1],
+            ])
+
+        self.char_dict = CharDict()
+        self.mode = mode
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index: int):
+        if self.mode == 'train':
+            condition = index % 4
+            return self.char_dict.string_to_long_tensor(self.data[index]), condition
+        else:
+            input_long_tensor = self.char_dict.string_to_long_tensor(self.data[index, 0])
+            input_condition = self.targets[index, 0]
+            output_long_tensor = self.char_dict.string_to_long_tensor(self.data[index, 1])
+            output_condition = self.targets[index, 1]
+            return input_long_tensor, input_condition, output_long_tensor, output_condition
 
 
 class EncoderRNN(nn.Module):
