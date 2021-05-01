@@ -5,6 +5,7 @@ from os import system
 from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
 from typing import List, Tuple
+from tqdm import tqdm
 import unicodedata
 import string
 import re
@@ -107,6 +108,12 @@ class TenseLoader(Dataset):
 
         self.char_dict = CharDict()
         self.mode = mode
+        self.tenses = [
+            'simple-present',
+            'third-person',
+            'present-progressive',
+            'simple-past'
+        ]
 
     def __len__(self):
         return len(self.data)
@@ -320,6 +327,61 @@ def compute_bleu(output, reference) -> float:
     return sentence_bleu([reference], output, weights=weights, smoothing_function=cc.method1)
 
 
+def train(input_size: int, condition_size: int, hidden_size: int, latent_size: int, condition_embedding_size: int,
+          kl_weight: float, teacher_forcing_ratio: float, learning_rate: float, epochs: int, train_device: device,
+          train_dataset: TenseLoader, test_dataset: TenseLoader) -> None:
+    """
+    Train CVAE
+    :param input_size: word size
+    :param condition_size: word condition size
+    :param hidden_size: hidden size
+    :param latent_size: latent size
+    :param condition_embedding_size: embedded condition size
+    :param kl_weight: KL weight
+    :param teacher_forcing_ratio: teacher forcing ratio
+    :param learning_rate: learning rate
+    :param epochs: number of epochs
+    :param train_device: training device
+    :param train_dataset: train dataset
+    :param test_dataset: test dataset
+    :return: None
+    """
+    # Setup CVAE
+    info_log('Setup CVAE ...')
+    encoder = EncoderRNN(input_size=input_size,
+                         condition_size=condition_size,
+                         hidden_size=hidden_size,
+                         latent_size=latent_size,
+                         condition_embedding_size=condition_embedding_size,
+                         train_device=train_device)
+    encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
+    decoder = DecoderRNN(input_size=input_size,
+                         condition_size=condition_size,
+                         hidden_size=hidden_size,
+                         latent_size=latent_size,
+                         condition_embedding_size=condition_embedding_size,
+                         train_device=train_device)
+    decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
+
+    # Start training
+    info_log('Start training')
+    for epoch in tqdm(range(epochs)):
+        encoder.train()
+        decoder.train()
+
+        for inputs, condition in train_dataset:
+            inputs = inputs.to(train_device)
+            encoder_optimizer.zero_grad()
+            decoder_optimizer.zero_grad()
+
+            hidden, cell = encoder.forward(inputs=inputs,
+                                           prev_hidden=encoder.init_hidden_or_cell(),
+                                           prev_cell=encoder.init_hidden_or_cell(),
+                                           input_condition=condition)
+            hidden_mean, hidden_log_var, hidden_latent = hidden
+            cell_mean, cell_log_var, cell_latent = cell
+
+
 def info_log(log: str) -> None:
     """
     Print information log
@@ -393,6 +455,7 @@ def parse_arguments() -> Namespace:
     parser.add_argument('-t', '--teacher_forcing_ratio', default=1.0, type=check_float_type,
                         help='Teacher forcing ratio')
     parser.add_argument('-lr', '--learning_rate', default=0.05, type=float, help='Learning rate')
+    parser.add_argument('-e', '--epochs', default=100, type=int, help='Number of epochs')
     parser.add_argument('-v', '--verbosity', default=0, type=check_verbosity_type, help='Verbosity level')
 
     return parser.parse_args()
@@ -411,6 +474,7 @@ def main() -> None:
     kl_weight = arguments.kl_weight
     teacher_forcing_ratio = arguments.teacher_forcing_ratio
     learning_rate = arguments.learning_rate
+    epochs = arguments.epochs
     global verbosity
     verbosity = arguments.verbosity
     info_log(f'Hidden size: {hidden_size}')
@@ -419,10 +483,30 @@ def main() -> None:
     info_log(f'KL weight: {kl_weight}')
     info_log(f'Teacher forcing ratio: {teacher_forcing_ratio}')
     info_log(f'Learning rate: {learning_rate}')
+    info_log(f'Number of epochs: {epochs}')
 
     # Get training device
     train_device = device("cuda" if cuda.is_available() else "cpu")
     info_log(f'Training device: {train_device}')
+
+    # Read data
+    info_log('Reading data ...')
+    train_dataset = TenseLoader(mode='train')
+    test_dataset = TenseLoader(mode='test')
+
+    # Train model
+    train(input_size=train_dataset.char_dict.num_of_words,
+          condition_size=len(train_dataset.tenses),
+          hidden_size=hidden_size,
+          latent_size=latent_size,
+          condition_embedding_size=condition_embedding_size,
+          kl_weight=kl_weight,
+          teacher_forcing_ratio=teacher_forcing_ratio,
+          learning_rate=learning_rate,
+          epochs=epochs,
+          train_device=train_device,
+          train_dataset=train_dataset,
+          test_dataset=test_dataset)
 
 
 if __name__ == '__main__':
