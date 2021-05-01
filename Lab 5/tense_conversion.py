@@ -20,6 +20,54 @@ import numpy as np
 import sys
 
 
+class CharDict:
+    def __init__(self):
+        self.word_to_index = {}
+        self.index_to_word = {}
+        self.num_of_words = 0
+
+        for word in ['SOS', 'EOS']:
+            self.add_word(word)
+
+        for num in range(26):
+            self.add_word(chr(ord('a') + num))
+
+    def add_word(self, word: str) -> None:
+        """
+        Add a word to the dictionary
+        :param word: word to be added
+        :return: None
+        """
+        if word not in self.word_to_index:
+            self.word_to_index[word] = self.num_of_words
+            self.index_to_word[self.num_of_words] = word
+            self.num_of_words += 1
+
+    def string_to_long_tensor(self, input_string: str) -> LongTensor:
+        """
+        Convert string to Long Tensor represented by indices
+        :param input_string: input string
+        :return: Long Tensor represented by indices
+        """
+        sequence = ['SOS'] + list(input_string) + ['EOS']
+        return LongTensor([self.word_to_index[char] for char in sequence])
+
+    def long_tensor_to_string(self, long_tensor: LongTensor) -> str:
+        """
+        Convert Long Tensor to original string
+        :param long_tensor: input Long Tensor
+        :return: original string
+        """
+        original_string = ''
+        for obj in long_tensor:
+            char = self.index_to_word[obj.item()]
+            if len(char) < 2:
+                original_string += char
+            elif char == 'EOS':
+                break
+        return original_string
+
+
 class EncoderRNN(nn.Module):
     def __init__(self, input_size: int, condition_size: int, hidden_size: int, latent_size: int,
                  condition_embedding_size: int, train_device: device):
