@@ -380,7 +380,7 @@ def train(target_model: str, comparison: int, pretrain: int, load_or_not: int, b
         last_accuracy = load_object(name='accuracy')
         accuracy = {
             'train': {key: last_accuracy['train'][key] + [0 for _ in range(epochs)] for key in keys},
-            'test': {key: last_accuracy['train'][key] + [0 for _ in range(epochs)] for key in keys}
+            'test': {key: last_accuracy['test'][key] + [0 for _ in range(epochs)] for key in keys}
         }
     else:
         accuracy = {
