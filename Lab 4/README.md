@@ -10,7 +10,7 @@
 |`'-t', '--target_model'`|ResNet18 or ResNet50|'ResNet18'|
 |`'-c', '--comparison'`|Whether compare the accuracies of w/ pretraining and w/o pretraining models|1|
 |`'-p', '--pretrain'`|Train w/ pretraining model or w/o pretraining model when "comparison" is false|0|
-`'-l', '--load'`|Whether load the stored model and accuracies|0|
+|`'-l', '--load'`|Whether load the stored model and accuracies|0|
 |`'-b', '--batch_size'`|Batch size|4|
 |`'-lr', '--learning_rate'`|Learning rate|1e-3|
 |`'-e', '--epochs'`|Number of epochs|10|
