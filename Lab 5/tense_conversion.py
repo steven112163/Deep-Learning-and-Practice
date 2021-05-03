@@ -187,7 +187,8 @@ class EncoderRNN(nn.Module):
         embedded_inputs = self.input_embedding(inputs).view(-1, 1, self.hidden_size)
 
         # Get RNN outputs
-        _, next_hidden, next_cell = self.lstm(embedded_inputs, (hidden_state, cell_state))
+        _, next_states = self.lstm(embedded_inputs, (hidden_state, cell_state))
+        next_hidden, next_cell = next_states
 
         # Get hidden mean, log variance, and sampled values
         hidden_mean = self.hidden_mean(next_hidden)
@@ -248,27 +249,20 @@ class DecoderRNN(nn.Module):
 
         self.out = nn.Linear(hidden_size, input_size)
 
-    def forward(self, inputs: LongTensor, hidden_latent: Tensor, cell_latent: Tensor,
-                input_condition: int) -> Tuple[Tensor, ...]:
+    def forward(self, inputs: LongTensor, hidden_latent: Tensor, cell_latent: Tensor) -> Tuple[Tensor, ...]:
         """
         Forward propagation
         :param inputs: inputs
         :param hidden_latent: hidden latent
         :param cell_latent: cell latent
-        :param input_condition: input conditions
         :return: output, next hidden latent, next cell hidden latent
         """
-        # Embed condition
-        embedded_condition = self.embed_condition(input_condition)
-
-        # Get hidden state and cell state
-        hidden_state, cell_state = self.init_hidden_and_cell(hidden_latent, cell_latent, embedded_condition)
-
         # Embed inputs
         embedded_inputs = self.input_embedding(inputs).view(1, 1, self.hidden_size)
 
         # Get RNN outputs
-        output, next_hidden_latent, next_cell_latent = self.lstm(embedded_inputs, (hidden_state, cell_state))
+        output, next_latents = self.lstm(embedded_inputs, (hidden_latent, cell_latent))
+        next_hidden_latent, next_cell_latent = next_latents
 
         # Get decoded output
         output = self.out(output).view(-1, self.input_size)
@@ -276,18 +270,30 @@ class DecoderRNN(nn.Module):
         return output, next_hidden_latent, next_cell_latent
 
     def init_hidden_and_cell(self, hidden_latent: Tensor, cell_latent: Tensor,
-                             embedded_condition: Tensor) -> Tuple[Tensor, ...]:
+                             input_condition: int) -> Tuple[Tensor, ...]:
         """
         Concatenate latent and condition, then convert latent to state and return
         :param hidden_latent: hidden latent
         :param cell_latent: cell latent
-        :param embedded_condition: embedded condition
+        :param input_condition: input condition
         :return: hidden state and cell state
         """
-        concatenated_hidden_latent = torch.cat((hidden_latent, embedded_condition), dim=2)
-        concatenated_cell_latent = torch.cat((cell_latent, embedded_condition), dim=2)
+        # Embed condition
+        embedded_condition = self.embed_condition(input_condition)
+
+        concatenated_hidden_latent = cat((hidden_latent, embedded_condition), dim=2)
+        concatenated_cell_latent = cat((cell_latent, embedded_condition), dim=2)
         return self.hidden_latent_to_hidden_state(concatenated_hidden_latent), self.cell_latent_to_cell_state(
             concatenated_cell_latent)
+
+    def embed_condition(self, condition: int) -> Tensor:
+        """
+        Embed condition
+        :param condition: original condition
+        :return: embedded condition
+        """
+        condition_tensor = LongTensor([condition]).to(self.train_device)
+        return self.condition_embedding(condition_tensor).view(1, 1, -1)
 
 
 def gaussian_score(words: List[List[str]]) -> float:
@@ -325,6 +331,19 @@ def compute_bleu(output, reference) -> float:
     else:
         weights = (0.25, 0.25, 0.25, 0.25)
     return sentence_bleu([reference], output, weights=weights, smoothing_function=cc.method1)
+
+
+def kl_loss(hidden_mean: Tensor, hidden_log_variance: Tensor, cell_mean: Tensor, cell_log_variance: Tensor) -> Tensor:
+    """
+    Compute KL divergence loss
+    :param hidden_mean: mean of hidden state
+    :param hidden_log_variance: log variance of hidden state
+    :param cell_mean: mean of cell state
+    :param cell_log_variance: log variance of cell state
+    :return: loss
+    """
+    return torch.sum(0.5 * (hidden_log_variance - cell_log_variance) + (
+            torch.exp(hidden_log_variance) + (hidden_mean - cell_mean) ** 2) / torch.exp(cell_log_variance) / 2.0 - 0.5)
 
 
 def train(input_size: int, condition_size: int, hidden_size: int, latent_size: int, condition_embedding_size: int,
@@ -374,12 +393,57 @@ def train(input_size: int, condition_size: int, hidden_size: int, latent_size: i
             encoder_optimizer.zero_grad()
             decoder_optimizer.zero_grad()
 
-            hidden, cell = encoder.forward(inputs=inputs,
+            # Encode
+            hidden, cell = encoder.forward(inputs=inputs[1:],
                                            prev_hidden=encoder.init_hidden_or_cell(),
                                            prev_cell=encoder.init_hidden_or_cell(),
                                            input_condition=condition)
             hidden_mean, hidden_log_var, hidden_latent = hidden
             cell_mean, cell_log_var, cell_latent = cell
+
+            use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
+
+            # Decode
+            sos_token = train_dataset.char_dict.word_to_index['SOS']
+            eos_token = train_dataset.char_dict.word_to_index['EOS']
+
+            hidden_latent, cell_latent = decoder.init_hidden_and_cell(hidden_latent=hidden_latent.view(1, 1, -1),
+                                                                      cell_latent=cell_latent.view(1, 1, -1),
+                                                                      input_condition=condition)
+
+            outputs = []
+            decode_input = LongTensor([sos_token]).to(train_device)
+            decode_all_input = inputs[:-1]
+            decode_length = decode_all_input.size(0)
+            for idx in range(decode_length):
+                decode_input = decode_input.detach()
+                output, hidden_latent, cell_latent = decoder.forward(inputs=decode_input,
+                                                                     hidden_latent=hidden_latent,
+                                                                     cell_latent=cell_latent)
+                outputs.append(output)
+                output_one_hot = torch.max(torch.softmax(output, dim=1), 1)[1]
+                if output_one_hot.item() == eos_token and not use_teacher_forcing:
+                    break
+
+                if use_teacher_forcing:
+                    decode_input = decode_all_input[idx + 1: idx + 2]
+                else:
+                    decode_input = output_one_hot
+            if len(outputs) != 0:
+                outputs = cat(outputs, dim=0)
+            else:
+                outputs = torch.FloatTensor([]).view(0, input_size).to(train_device)
+
+            # Backpropagation
+            reconstruction_loss = nn.CrossEntropyLoss(reduction='sum')(outputs, decode_all_input.to(train_device))
+            regularization_loss = kl_loss(hidden_mean=hidden_mean,
+                                          hidden_log_variance=hidden_log_var,
+                                          cell_mean=cell_mean,
+                                          cell_log_variance=cell_log_var)
+            (reconstruction_loss + (kl_weight * regularization_loss)).backward()
+
+            encoder_optimizer.step()
+            decoder_optimizer.step()
 
 
 def info_log(log: str) -> None:
@@ -448,7 +512,7 @@ def parse_arguments() -> Namespace:
     :return: arguments
     """
     parser = ArgumentParser(description='VAE & CVAE')
-    parser.add_argument('-h', '--hidden_size', default=256, type=check_hidden_size_type, help='RNN hidden size')
+    parser.add_argument('-hs', '--hidden_size', default=256, type=check_hidden_size_type, help='RNN hidden size')
     parser.add_argument('-ls', '--latent_size', default=32, type=int, help='Latent size')
     parser.add_argument('-c', '--condition_embedding_size', default=8, type=int, help='Condition embedding size')
     parser.add_argument('-k', '--kl_weight', default=0.0, type=check_float_type, help='KL weight')
