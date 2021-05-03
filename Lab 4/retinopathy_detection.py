@@ -317,15 +317,27 @@ def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], pred
         plt.close()
 
 
-def train(target_model: str, comparison: int, pretrain: int, load_or_not: int, batch_size: int, learning_rate: float,
-          epochs: int, optimizer: op, momentum: float, weight_decay: float, train_device: device,
-          train_dataset: RetinopathyLoader, test_dataset: RetinopathyLoader) -> None:
+def train(target_model: str,
+          comparison: int,
+          pretrain: int,
+          load_or_not: int,
+          show_only: int,
+          batch_size: int,
+          learning_rate: float,
+          epochs: int,
+          optimizer: op,
+          momentum: float,
+          weight_decay: float,
+          train_device: device,
+          train_dataset: RetinopathyLoader,
+          test_dataset: RetinopathyLoader) -> None:
     """
     Train the models
     :param target_model: ResNet18 or ResNet50
     :param comparison: Whether compare w/ pretraining and w/o pretraining models
     :param pretrain: Whether use pretrained model when comparison is false
     :param load_or_not: Whether load the stored model and accuracies
+    :param show_only: Whether only show the results
     :param batch_size: batch size
     :param learning_rate: learning rate
     :param epochs: number of epochs
@@ -414,69 +426,70 @@ def train(target_model: str, comparison: int, pretrain: int, load_or_not: int, b
     }
 
     # Start training
-    info_log('Start training')
     last_epoch = checkpoint['epoch'] if not comparison and load_or_not else 0
-    for key, model in models.items():
-        info_log(f'Training {key} ...')
-        if optimizer is op.SGD:
-            model_optimizer = optimizer(model.parameters(), lr=learning_rate, momentum=momentum,
-                                        weight_decay=weight_decay)
-        else:
-            model_optimizer = optimizer(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    if not show_only:
+        info_log('Start training')
+        for key, model in models.items():
+            info_log(f'Training {key} ...')
+            if optimizer is op.SGD:
+                model_optimizer = optimizer(model.parameters(), lr=learning_rate, momentum=momentum,
+                                            weight_decay=weight_decay)
+            else:
+                model_optimizer = optimizer(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
-        if not comparison and load_or_not:
-            model_optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            if not comparison and load_or_not:
+                model_optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
-        max_test_acc = 0
-        for epoch in tqdm(range(last_epoch, epochs + last_epoch)):
-            # Train model
-            model.train()
-            for data, label in train_loader:
-                inputs = data.to(train_device)
-                labels = label.to(train_device).long().view(-1)
-
-                pred_labels = model.forward(inputs=inputs)
-
-                model_optimizer.zero_grad()
-                loss = nn.CrossEntropyLoss()(pred_labels, labels)
-                loss.backward()
-                model_optimizer.step()
-
-                accuracy['train'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
-            accuracy['train'][key][epoch] = 100.0 * accuracy['train'][key][epoch] / len(train_dataset)
-
-            # Test model
-            model.eval()
-            with no_grad():
-                pred_labels = np.array([], dtype=int)
-                for data, label in test_loader:
+            max_test_acc = 0
+            for epoch in tqdm(range(last_epoch, epochs + last_epoch)):
+                # Train model
+                model.train()
+                for data, label in train_loader:
                     inputs = data.to(train_device)
                     labels = label.to(train_device).long().view(-1)
 
-                    outputs = model.forward(inputs=inputs)
-                    outputs = tensor_max(outputs, 1)[1]
-                    pred_labels = np.concatenate((pred_labels, outputs.cpu().numpy()))
+                    pred_labels = model.forward(inputs=inputs)
 
-                    accuracy['test'][key][epoch] += (outputs == labels).sum().item()
-                accuracy['test'][key][epoch] = 100.0 * accuracy['test'][key][epoch] / len(test_dataset)
+                    model_optimizer.zero_grad()
+                    loss = nn.CrossEntropyLoss()(pred_labels, labels)
+                    loss.backward()
+                    model_optimizer.step()
 
-                if accuracy['test'][key][epoch] > max_test_acc:
-                    max_test_acc = accuracy['test'][key][epoch]
-                    prediction[key] = pred_labels
+                    accuracy['train'][key][epoch] += (tensor_max(pred_labels, 1)[1] == labels).sum().item()
+                accuracy['train'][key][epoch] = 100.0 * accuracy['train'][key][epoch] / len(train_dataset)
 
-            debug_log(f'Train accuracy: {accuracy["train"][key][epoch]:.2f}%')
-            debug_log(f'Test accuracy: {accuracy["test"][key][epoch]:.2f}%')
-        print()
-        if not comparison:
-            if not os.path.exists('./model'):
-                os.mkdir('./model')
-            stored_check_point['epoch'] = last_epoch + epochs
-            stored_check_point['model_state_dict'] = model.state_dict()
-            stored_check_point['optimizer_state_dict'] = model_optimizer.state_dict()
-            save(stored_check_point, f'./model/{target_model}.pt')
-            save_object(obj=accuracy, name='accuracy')
-            save_object(obj=prediction, name='prediction')
-        cuda.empty_cache()
+                # Test model
+                model.eval()
+                with no_grad():
+                    pred_labels = np.array([], dtype=int)
+                    for data, label in test_loader:
+                        inputs = data.to(train_device)
+                        labels = label.to(train_device).long().view(-1)
+
+                        outputs = model.forward(inputs=inputs)
+                        outputs = tensor_max(outputs, 1)[1]
+                        pred_labels = np.concatenate((pred_labels, outputs.cpu().numpy()))
+
+                        accuracy['test'][key][epoch] += (outputs == labels).sum().item()
+                    accuracy['test'][key][epoch] = 100.0 * accuracy['test'][key][epoch] / len(test_dataset)
+
+                    if accuracy['test'][key][epoch] > max_test_acc:
+                        max_test_acc = accuracy['test'][key][epoch]
+                        prediction[key] = pred_labels
+
+                debug_log(f'Train accuracy: {accuracy["train"][key][epoch]:.2f}%')
+                debug_log(f'Test accuracy: {accuracy["test"][key][epoch]:.2f}%')
+            print()
+            if not comparison:
+                if not os.path.exists('./model'):
+                    os.mkdir('./model')
+                stored_check_point['epoch'] = last_epoch + epochs
+                stored_check_point['model_state_dict'] = model.state_dict()
+                stored_check_point['optimizer_state_dict'] = model_optimizer.state_dict()
+                save(stored_check_point, f'./model/{target_model}.pt')
+                save_object(obj=accuracy, name='accuracy')
+                save_object(obj=prediction, name='prediction')
+            cuda.empty_cache()
 
     # Show results
     show_results(target_model=target_model, epochs=last_epoch + epochs, accuracy=accuracy, prediction=prediction,
@@ -558,6 +571,18 @@ def check_load_type(input_value: str) -> int:
     return int_value
 
 
+def check_show_type(input_value: str) -> int:
+    """
+    Check whether the show_only is 0 or 1
+    :param input_value: input string value
+    :return: integer value
+    """
+    int_value = int(input_value)
+    if int_value != 0 and int_value != 1:
+        raise ArgumentTypeError(f'Show_only should be 0 or 1.')
+    return int_value
+
+
 def check_optimizer_type(input_value: str) -> op:
     """
     Check whether the optimizer is supported
@@ -605,6 +630,7 @@ def parse_arguments() -> Namespace:
                         help='Train w/ pretraining model or w/o pretraining model when "comparison" is false')
     parser.add_argument('-l', '--load', default=0, type=check_load_type,
                         help='Whether load the stored model and accuracies')
+    parser.add_argument('-s', '--show_only', default=0, type=check_show_type, help='Whether only show the results')
     parser.add_argument('-b', '--batch_size', default=4, type=int, help='Batch size')
     parser.add_argument('-lr', '--learning_rate', default=1e-3, type=float, help='Learning rate')
     parser.add_argument('-e', '--epochs', default=10, type=int, help='Number of epochs')
@@ -627,6 +653,7 @@ def main() -> None:
     comparison = arguments.comparison
     pretrain = arguments.pretrain
     load_or_not = arguments.load
+    show_only = arguments.show_only
     batch_size = arguments.batch_size
     learning_rate = arguments.learning_rate
     epochs = arguments.epochs
@@ -639,6 +666,7 @@ def main() -> None:
     info_log(f'Compare w/ and w/o pretraining: {"True" if comparison else "False"}')
     info_log(f'Use pretrained model: {"True" if pretrain else "False"}')
     info_log(f'Use loaded model: {"True" if load_or_not else "False"}')
+    info_log(f'Only show the results: {"True" if show_only else "False"}')
     info_log(f'Batch size: {batch_size}')
     info_log(f'Learning rate: {learning_rate}')
     info_log(f'Epochs: {epochs}')
@@ -663,6 +691,7 @@ def main() -> None:
           comparison=comparison,
           pretrain=pretrain,
           load_or_not=load_or_not,
+          show_only=show_only,
           batch_size=batch_size,
           learning_rate=learning_rate,
           epochs=epochs,
