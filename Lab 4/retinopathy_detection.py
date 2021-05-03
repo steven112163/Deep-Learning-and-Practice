@@ -309,7 +309,7 @@ def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], pred
     plt.close()
 
     for key, pred_labels in prediction.items():
-        cm = confusion_matrix(y_true=ground_truth, y_pred=pred_labels, normalize='all')
+        cm = confusion_matrix(y_true=ground_truth, y_pred=pred_labels, normalize='true')
         ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[0, 1, 2, 3, 4]).plot(cmap=plt.cm.Blues)
         plt.title(f'Normalized confusion matrix ({key})')
         plt.tight_layout()
@@ -650,8 +650,7 @@ def main() -> None:
     info_log('Reading data ...')
     train_dataset = RetinopathyLoader('./data', 'train', [
         transforms.RandomHorizontalFlip(p=0.5),
-        transforms.RandomVerticalFlip(p=0.5),
-        transforms.ColorJitter(brightness=(0, 2), contrast=(0, 2), saturation=(0, 2), hue=(-0.1, 0.1))
+        transforms.RandomVerticalFlip(p=0.5)
     ])
     test_dataset = RetinopathyLoader('./data', 'test')
 
