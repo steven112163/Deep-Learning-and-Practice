@@ -158,7 +158,7 @@ class EncoderRNN(nn.Module):
                                       out_features=latent_size)
 
     def forward(self, inputs: LongTensor, prev_hidden: Tensor, prev_cell: Tensor,
-                input_condition: Tensor) -> Tuple[Tuple[Tensor, ...], Tuple[Tensor, ...]]:
+                input_condition: int) -> Tuple[Tuple[Tensor, ...], Tuple[Tensor, ...]]:
         """
         Forward propagation
         :param inputs: inputs
@@ -167,18 +167,17 @@ class EncoderRNN(nn.Module):
         :param input_condition: input conditions
         :return: (hidden mean, hidden log variance, hidden latent), (cell mean, cell log variance, cell latent)
         """
-        # Embed inputs
-        embedded_inputs = self.input_embedding(inputs).view(-1, 1, self.hidden_size)
-
         # Embed condition
-        embedded_condition = self.condition_embedding(input_condition)
-        embedded_condition = embedded_condition.view(1, 1, -1)
+        embedded_condition = self.embed_condition(input_condition)
 
         # Concatenate previous hidden state with embedded condition to get current hidden state
         hidden_state = cat((prev_hidden, embedded_condition), dim=2)
 
         # Concatenate previous cell state with embedded condition to get current cell state
         cell_state = cat((prev_cell, embedded_condition), dim=2)
+
+        # Embed inputs
+        embedded_inputs = self.input_embedding(inputs).view(-1, 1, self.hidden_size)
 
         # Get RNN outputs
         _, next_states = self.lstm(embedded_inputs, (hidden_state, cell_state))
@@ -202,6 +201,15 @@ class EncoderRNN(nn.Module):
         :return: Tensor with zeros
         """
         return torch.zeros(1, 1, self.hidden_size - self.condition_embedding_size, device=self.train_device)
+
+    def embed_condition(self, condition: int) -> Tensor:
+        """
+        Embed condition
+        :param condition: original condition
+        :return: embedded condition
+        """
+        condition_tensor = LongTensor([condition]).to(self.train_device)
+        return self.condition_embedding(condition_tensor).view(1, 1, -1)
 
 
 class DecoderRNN(nn.Module):
@@ -457,14 +465,14 @@ def train(input_size: int,
                          hidden_size=hidden_size,
                          latent_size=latent_size,
                          condition_embedding_size=condition_embedding_size,
-                         train_device=train_device)
+                         train_device=train_device).to(train_device)
     encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
     decoder = DecoderRNN(input_size=input_size,
                          condition_size=condition_size,
                          hidden_size=hidden_size,
                          latent_size=latent_size,
                          condition_embedding_size=condition_embedding_size,
-                         train_device=train_device)
+                         train_device=train_device).to(train_device)
     decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
 
     # Losses and scores
@@ -496,11 +504,10 @@ def train(input_size: int,
             decoder_optimizer.zero_grad()
 
             # Encode
-            condition_tensor = LongTensor([condition]).to(train_device)
             hidden, cell = encoder.forward(inputs=inputs[1:],
                                            prev_hidden=encoder.init_hidden_or_cell(),
                                            prev_cell=encoder.init_hidden_or_cell(),
-                                           input_condition=condition_tensor)
+                                           input_condition=condition)
             hidden_mean, hidden_log_var, hidden_latent = hidden
             cell_mean, cell_log_var, cell_latent = cell
 
@@ -541,11 +548,10 @@ def train(input_size: int,
             inputs.to(train_device)
             targets.to(train_device)
 
-            condition_tensor = LongTensor([input_condition]).to(train_device)
             hidden, cell = encoder.forward(inputs=inputs[1:],
                                            prev_hidden=encoder.init_hidden_or_cell(),
                                            prev_cell=encoder.init_hidden_or_cell(),
-                                           input_condition=condition_tensor)
+                                           input_condition=input_condition)
             _, _, hidden_latent = hidden
             _, _, cell_latent = cell
             outputs = decode(input_size=input_size,
