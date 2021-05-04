@@ -273,8 +273,13 @@ def load_object(name: str):
         return pickle.load(f)
 
 
-def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], prediction: Dict[str, np.ndarray],
-                 ground_truth: np.ndarray, keys: List[str]) -> None:
+def show_results(target_model: str,
+                 epochs: int,
+                 accuracy: Dict[str, dict],
+                 prediction: Dict[str, np.ndarray],
+                 ground_truth: np.ndarray,
+                 keys: List[str],
+                 show_only: int) -> None:
     """
     Show accuracy results
     :param target_model: ResNet18 or ResNet50
@@ -283,6 +288,7 @@ def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], pred
     :param prediction: predictions of different ResNets
     :param ground_truth: ground truth of testing data
     :param keys: names of ResNet w/ or w/o pretraining
+    :param show_only: Whether only show the results
     :return: None
     """
     # Get the number of characters of the longest ResNet name
@@ -305,16 +311,21 @@ def show_results(target_model: str, epochs: int, accuracy: Dict[str, dict], pred
 
     plt.legend(loc='lower right')
     plt.tight_layout()
-    plt.savefig(f'./results/{target_model}_comparison.png')
-    plt.close()
+    if not show_only:
+        plt.savefig(f'./results/{target_model}_comparison.png')
+        plt.close()
 
     for key, pred_labels in prediction.items():
         cm = confusion_matrix(y_true=ground_truth, y_pred=pred_labels, normalize='true')
         ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[0, 1, 2, 3, 4]).plot(cmap=plt.cm.Blues)
         plt.title(f'Normalized confusion matrix ({key})')
         plt.tight_layout()
-        plt.savefig(f'./results/{key.replace(" ", "_").replace("/", "_")}_confusion.png')
-        plt.close()
+        if not show_only:
+            plt.savefig(f'./results/{key.replace(" ", "_").replace("/", "_")}_confusion.png')
+            plt.close()
+
+    if show_only:
+        plt.show()
 
 
 def train(target_model: str,
@@ -394,7 +405,9 @@ def train(target_model: str,
 
     # Setup accuracy structure
     info_log('Setup accuracy structure ...')
-    if not comparison and load_or_not:
+    if show_only:
+        accuracy = load_object(name='accuracy')
+    elif not comparison and load_or_not:
         last_accuracy = load_object(name='accuracy')
         accuracy = {
             'train': {key: last_accuracy['train'][key] + [0 for _ in range(epochs)] for key in keys},
@@ -493,7 +506,7 @@ def train(target_model: str,
 
     # Show results
     show_results(target_model=target_model, epochs=last_epoch + epochs, accuracy=accuracy, prediction=prediction,
-                 ground_truth=ground_truth, keys=keys)
+                 ground_truth=ground_truth, keys=keys, show_only=show_only)
 
 
 def info_log(log: str) -> None:
