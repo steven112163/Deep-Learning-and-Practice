@@ -166,7 +166,7 @@ class EncoderRNN(nn.Module):
                                       out_features=latent_size)
 
     def forward(self, inputs: LongTensor, prev_hidden: Tensor, prev_cell: Tensor,
-                input_condition: int) -> Tuple[Tuple[Tensor, ...], Tuple[Tensor, ...]]:
+                input_condition: Tensor) -> Tuple[Tuple[Tensor, ...], Tuple[Tensor, ...]]:
         """
         Forward propagation
         :param inputs: inputs
@@ -175,14 +175,11 @@ class EncoderRNN(nn.Module):
         :param input_condition: input conditions
         :return: (hidden mean, hidden log variance, hidden latent), (cell mean, cell log variance, cell latent)
         """
-        # Embed condition
-        embedded_condition = self.embed_condition(input_condition)
+        # Concatenate previous hidden state with input condition to get current hidden state
+        hidden_state = cat((prev_hidden, input_condition), dim=2)
 
-        # Concatenate previous hidden state with embedded condition to get current hidden state
-        hidden_state = cat((prev_hidden, embedded_condition), dim=2)
-
-        # Concatenate previous cell state with embedded condition to get current cell state
-        cell_state = cat((prev_cell, embedded_condition), dim=2)
+        # Concatenate previous cell state with input condition to get current cell state
+        cell_state = cat((prev_cell, input_condition), dim=2)
 
         # Embed inputs
         embedded_inputs = self.input_embedding(inputs).view(-1, 1, self.hidden_size)
@@ -515,7 +512,7 @@ def train(input_size: int,
             hidden, cell = encoder.forward(inputs=inputs[1:],
                                            prev_hidden=encoder.init_hidden_or_cell(),
                                            prev_cell=encoder.init_hidden_or_cell(),
-                                           input_condition=condition)
+                                           input_condition=encoder.embed_condition(condition))
             hidden_mean, hidden_log_var, hidden_latent = hidden
             cell_mean, cell_log_var, cell_latent = cell
 
