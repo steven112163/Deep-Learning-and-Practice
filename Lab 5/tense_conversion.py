@@ -565,7 +565,7 @@ def train(input_size: int,
                              dataset=test_dataset,
                              train_device=train_device)
 
-            outputs_one_hot = LongTensor(torch.max(torch.softmax(outputs, dim=1), 1)[1]).to(train_device)
+            outputs_one_hot = torch.max(torch.softmax(outputs, dim=1), 1)[1]
             inputs_str = test_dataset.char_dict.long_tensor_to_string(inputs)
             targets_str = test_dataset.char_dict.long_tensor_to_string(targets)
             outputs_str = test_dataset.char_dict.long_tensor_to_string(outputs_one_hot)
