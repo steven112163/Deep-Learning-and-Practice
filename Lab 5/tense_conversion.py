@@ -186,12 +186,14 @@ class EncoderRNN(nn.Module):
         # Get hidden mean, log variance, and sampled values
         hidden_mean = self.hidden_mean(next_hidden)
         hidden_log_var = self.hidden_log_var(next_hidden)
-        hidden_latent = randn(self.latent_size) * exp(0.5 * hidden_log_var) + hidden_mean
+        hidden_latent = randn(self.latent_size).to(self.train_device) * exp(0.5 * hidden_log_var).to(
+            self.train_device) + hidden_mean
 
         # Get cell mean and log variance, and sampled values
         cell_mean = self.cell_mean(next_cell)
         cell_log_var = self.cell_log_var(next_cell)
-        cell_latent = randn(self.latent_size) * exp(0.5 * cell_log_var) + cell_mean
+        cell_latent = randn(self.latent_size).to(self.train_device) * exp(0.5 * cell_log_var).to(
+            self.train_device) + cell_mean
 
         return (hidden_mean, hidden_log_var, hidden_latent), (cell_mean, cell_log_var, cell_latent)
 
