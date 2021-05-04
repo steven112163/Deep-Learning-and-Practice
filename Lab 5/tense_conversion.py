@@ -166,7 +166,7 @@ class EncoderRNN(nn.Module):
                                       out_features=latent_size)
 
     def forward(self, inputs: LongTensor, prev_hidden: Tensor, prev_cell: Tensor,
-                input_condition: Tensor) -> Tuple[Tuple[Tensor, ...], Tuple[Tensor, ...]]:
+                input_condition: int) -> Tuple[Tuple[Tensor, ...], Tuple[Tensor, ...]]:
         """
         Forward propagation
         :param inputs: inputs
@@ -175,11 +175,15 @@ class EncoderRNN(nn.Module):
         :param input_condition: input conditions
         :return: (hidden mean, hidden log variance, hidden latent), (cell mean, cell log variance, cell latent)
         """
-        # Concatenate previous hidden state with input condition to get current hidden state
-        hidden_state = cat((prev_hidden, input_condition), dim=2)
+        # Embed condition
+        condition_tensor = LongTensor([input_condition]).to(self.train_device)
+        embedded_condition = self.condition_embedding(condition_tensor).view(1, 1, -1)
 
-        # Concatenate previous cell state with input condition to get current cell state
-        cell_state = cat((prev_cell, input_condition), dim=2)
+        # Concatenate previous hidden state with embedded condition to get current hidden state
+        hidden_state = cat((prev_hidden, embedded_condition), dim=2)
+
+        # Concatenate previous cell state with embedded condition to get current cell state
+        cell_state = cat((prev_cell, embedded_condition), dim=2)
 
         # Embed inputs
         embedded_inputs = self.input_embedding(inputs).view(-1, 1, self.hidden_size)
@@ -206,14 +210,6 @@ class EncoderRNN(nn.Module):
         :return: Tensor with zeros
         """
         return torch.zeros(1, 1, self.hidden_size - self.condition_embedding_size, device=self.train_device)
-
-    def embed_condition(self, condition_tensor: LongTensor) -> Tensor:
-        """
-        Embed condition
-        :param condition_tensor: long tensor of condition
-        :return: embedded condition
-        """
-        return self.condition_embedding(condition_tensor).view(1, 1, -1)
 
 
 class DecoderRNN(nn.Module):
@@ -511,8 +507,7 @@ def train(input_size: int,
             hidden, cell = encoder.forward(inputs=inputs[1:],
                                            prev_hidden=encoder.init_hidden_or_cell(),
                                            prev_cell=encoder.init_hidden_or_cell(),
-                                           input_condition=encoder.embed_condition(
-                                               LongTensor([condition]).to(train_device)))
+                                           input_condition=condition)
             hidden_mean, hidden_log_var, hidden_latent = hidden
             cell_mean, cell_log_var, cell_latent = cell
 
@@ -556,8 +551,7 @@ def train(input_size: int,
             hidden, cell = encoder.forward(inputs=inputs[1:],
                                            prev_hidden=encoder.init_hidden_or_cell(),
                                            prev_cell=encoder.init_hidden_or_cell(),
-                                           input_condition=encoder.embed_condition(
-                                               LongTensor([input_condition]).to(train_device)))
+                                           input_condition=input_condition)
             _, _, hidden_latent = hidden
             _, _, cell_latent = cell
             outputs = decode(input_size=input_size,
