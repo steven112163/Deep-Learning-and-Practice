@@ -140,7 +140,10 @@ class ResNet(nn.Module):
                 nn.Linear(getattr(pretrained_resnet, 'fc').in_features, out_features=50),
                 nn.ReLU(inplace=True),
                 nn.Dropout(p=0.25),
-                nn.Linear(in_features=50, out_features=5)
+                nn.Linear(in_features=50, out_features=20),
+                nn.ReLU(inplace=True),
+                nn.Dropout(p=0.25),
+                nn.Linear(in_features=20, out_features=5)
             )
 
             del pretrained_resnet
@@ -185,7 +188,10 @@ class ResNet(nn.Module):
                 nn.Linear(in_features=512 * block.expansion, out_features=50),
                 nn.ReLU(inplace=True),
                 nn.Dropout(p=0.25),
-                nn.Linear(in_features=50, out_features=5)
+                nn.Linear(in_features=50, out_features=20),
+                nn.ReLU(inplace=True),
+                nn.Dropout(p=0.25),
+                nn.Linear(in_features=20, out_features=5)
             )
 
     def make_layer(self, block: Type[Union[BasicBlock, BottleneckBlock]], num_of_blocks: int, in_channels: int,
