@@ -307,6 +307,7 @@ def gaussian_score(words: List[List[str]]) -> float:
         for t in words:
             for i in words_list:
                 if t == i:
+                    debug_log(f'{t}')
                     score += 1
     return score / len(words)
 
@@ -592,7 +593,7 @@ def train(input_size: int,
                                  target_length=28,
                                  dataset=test_dataset,
                                  train_device=train_device)
-                outputs_one_hot = LongTensor(torch.max(torch.softmax(outputs, dim=1), 1)[1])
+                outputs_one_hot = torch.max(torch.softmax(outputs, dim=1), 1)[1]
                 outputs_str = test_dataset.char_dict.long_tensor_to_string(outputs_one_hot)
                 group.append(outputs_str)
             words.append(group)
