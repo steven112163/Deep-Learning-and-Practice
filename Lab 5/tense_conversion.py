@@ -547,8 +547,8 @@ def train(input_size: int,
         encoder.eval()
         decoder.eval()
         for inputs, input_condition, targets, target_condition in test_dataset:
-            inputs.to(train_device)
-            targets.to(train_device)
+            inputs = inputs.to(train_device)
+            targets = targets.to(train_device)
 
             hidden, cell = encoder.forward(inputs=inputs[1:],
                                            prev_hidden=encoder.init_hidden_or_cell(),
