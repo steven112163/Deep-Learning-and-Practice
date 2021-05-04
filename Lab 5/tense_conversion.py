@@ -561,7 +561,7 @@ def train(input_size: int,
                              hidden_latent=hidden_latent,
                              cell_latent=cell_latent,
                              condition=target_condition,
-                             target_length=targets[:-1].size(),
+                             target_length=targets[:-1].size(0),
                              dataset=test_dataset,
                              train_device=train_device)
 
