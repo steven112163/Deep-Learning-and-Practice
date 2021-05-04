@@ -355,15 +355,14 @@ def show_results(epochs: int, losses_and_scores: Dict[str, List[float]]) -> None
     plt.title('Training loss and score')
     ax_2 = ax_1.twinx()
 
-    plots = [
-        ax_1.plot(range(epochs), losses_and_scores['BLEU-4 score'], '.', label='BLEU-4 score'),
-        ax_1.plot(range(epochs), losses_and_scores['Gaussian score'], '.', label='Gaussian score'),
-        ax_1.plot(range(epochs), losses_and_scores['Teacher forcing ratio'], '--', label='Teacher forcing ratio'),
-        ax_1.plot(range(epochs), losses_and_scores['KL weight'], '--', label='KL weight'),
-        ax_2.plot(range(epochs), losses_and_scores['KL loss'], label='KL loss'),
-        ax_2.plot(range(epochs), losses_and_scores['Cross entropy loss'], label='Cross entropy loss'),
-    ]
-    ax_1.legend(plots, [plot.get_label() for plot in plots])
+    curve_1, = ax_1.plot(range(epochs), losses_and_scores['BLEU-4 score'], '.', label='BLEU-4 score')
+    curve_2, = ax_1.plot(range(epochs), losses_and_scores['Gaussian score'], '.', label='Gaussian score')
+    curve_3, = ax_1.plot(range(epochs), losses_and_scores['Teacher forcing ratio'], '--', label='Teacher forcing ratio')
+    curve_4, = ax_1.plot(range(epochs), losses_and_scores['KL weight'], '--', label='KL weight')
+    curve_5, = ax_2.plot(range(epochs), losses_and_scores['KL loss'], label='KL loss')
+    curve_6, = ax_2.plot(range(epochs), losses_and_scores['Cross entropy loss'], label='Cross entropy loss')
+    curves = [curve_1, curve_2, curve_3, curve_4, curve_5, curve_6]
+    ax_1.legend(curves, [curve.get_label() for curve in curves])
 
     plt.legend(loc='lower right')
     plt.tight_layout()
