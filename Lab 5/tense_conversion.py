@@ -1,23 +1,15 @@
 from io import open
 from torch import optim, device, Tensor, LongTensor, cat, randn, exp, save
 from torch.utils.data import Dataset
-from os import system
 from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
 from typing import List, Tuple, Dict
 from tqdm import tqdm
-import unicodedata
-import string
-import re
 import random
-import time
-import math
 import torch
 import torch.cuda as cuda
 import torch.nn as nn
-import torch.nn.functional as func
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import numpy as np
 import sys
 import os
@@ -175,17 +167,18 @@ class EncoderRNN(nn.Module):
         :param input_condition: input conditions
         :return: (hidden mean, hidden log variance, hidden latent), (cell mean, cell log variance, cell latent)
         """
+        # Embed inputs
+        embedded_inputs = self.input_embedding(inputs).view(-1, 1, self.hidden_size)
+
         # Embed condition
-        embedded_condition = self.condition_embedding(input_condition).view(1, 1, -1)
+        embedded_condition = self.condition_embedding(input_condition)
+        embedded_condition = embedded_condition.view(1, 1, -1)
 
         # Concatenate previous hidden state with embedded condition to get current hidden state
         hidden_state = cat((prev_hidden, embedded_condition), dim=2)
 
         # Concatenate previous cell state with embedded condition to get current cell state
         cell_state = cat((prev_cell, embedded_condition), dim=2)
-
-        # Embed inputs
-        embedded_inputs = self.input_embedding(inputs).view(-1, 1, self.hidden_size)
 
         # Get RNN outputs
         _, next_states = self.lstm(embedded_inputs, (hidden_state, cell_state))
