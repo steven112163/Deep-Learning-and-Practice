@@ -565,7 +565,7 @@ def train(input_size: int,
                              dataset=test_dataset,
                              train_device=train_device)
 
-            outputs_one_hot = LongTensor(torch.max(torch.softmax(outputs, dim=1), 1)[1])
+            outputs_one_hot = LongTensor(torch.max(torch.softmax(outputs, dim=1), 1)[1]).to(train_device)
             inputs_str = test_dataset.char_dict.long_tensor_to_string(inputs)
             targets_str = test_dataset.char_dict.long_tensor_to_string(targets)
             outputs_str = test_dataset.char_dict.long_tensor_to_string(outputs_one_hot)
@@ -595,7 +595,6 @@ def train(input_size: int,
                 outputs_one_hot = LongTensor(torch.max(torch.softmax(outputs, dim=1), 1)[1])
                 outputs_str = test_dataset.char_dict.long_tensor_to_string(outputs_one_hot)
                 group.append(outputs_str)
-                debug_log(f'{group}')
             words.append(group)
         losses_and_scores['Gaussian score'][epoch] = gaussian_score(words)
         debug_log(f'Gaussian score: {losses_and_scores["Gaussian score"][epoch]:.2f}')
