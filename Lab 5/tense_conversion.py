@@ -1,10 +1,10 @@
 from io import open
-from torch import optim, device, Tensor, LongTensor, cat, randn, exp
+from torch import optim, device, Tensor, LongTensor, cat, randn, exp, save
 from torch.utils.data import Dataset
 from os import system
 from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from tqdm import tqdm
 import unicodedata
 import string
@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
 import sys
+import os
 
 
 class CharDict:
@@ -317,14 +318,13 @@ def gaussian_score(words: List[List[str]]) -> float:
     return score / len(words)
 
 
-def compute_bleu(output, reference) -> float:
+def compute_bleu(output: str, reference: str) -> float:
     """
     Compute BLEU-4 score
-    :param output:
-    :param reference:
+    :param output: output word
+    :param reference: reference word
     :return: BLEU-4 score
     """
-    # TODO: add typing and check output and reference
     cc = SmoothingFunction()
     if len(reference) == 3:
         weights = (0.33, 0.33, 0.33)
@@ -346,9 +346,110 @@ def kl_loss(hidden_mean: Tensor, hidden_log_variance: Tensor, cell_mean: Tensor,
             torch.exp(hidden_log_variance) + (hidden_mean - cell_mean) ** 2) / torch.exp(cell_log_variance) / 2.0 - 0.5)
 
 
-def train(input_size: int, condition_size: int, hidden_size: int, latent_size: int, condition_embedding_size: int,
-          kl_weight: float, teacher_forcing_ratio: float, learning_rate: float, epochs: int, train_device: device,
-          train_dataset: TenseLoader, test_dataset: TenseLoader) -> None:
+def show_results(epochs: int, losses_and_scores: Dict[str, List[float]]) -> None:
+    """
+    Show losses and scores
+    :param epochs: number of epochs
+    :param losses_and_scores: cross entropy loss, KL loss and BLEU-4 score
+    :return: None
+    """
+    if not os.path.exists('./results'):
+        os.mkdir('./results')
+
+    # Plot losses
+    plt.figure(0)
+    plt.title(f'Training Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+
+    plt.plot(range(epochs), losses_and_scores['Cross entropy loss'], label='Cross entropy loss')
+    plt.plot(range(epochs), losses_and_scores['KL loss'], label='KL loss')
+
+    plt.legend(loc='lower right')
+    plt.tight_layout()
+    plt.savefig(f'./results/losses.png')
+
+    # Plot score
+    plt.figure(0)
+    plt.title(f'BLEU-4 score')
+    plt.xlabel('Epoch')
+    plt.ylabel('score')
+
+    plt.plot(range(epochs), losses_and_scores['BLEU-4 score'], label='BLEU-4 score')
+
+    plt.legend(loc='lower right')
+    plt.tight_layout()
+    plt.savefig(f'./results/score.png')
+
+    plt.show()
+
+
+def decode(input_size: int,
+           decoder: DecoderRNN,
+           hidden_latent: Tensor,
+           cell_latent: Tensor,
+           condition: int,
+           dataset: TenseLoader,
+           train_device: device,
+           decode_all_inputs: LongTensor = None,
+           use_teacher_forcing: int = 0) -> LongTensor:
+    """
+    Decode and get the output from hidden and cell latent
+    :param input_size: input size (word)
+    :param decoder: decoder
+    :param hidden_latent: hidden latent from encoder
+    :param cell_latent: cell latent from encoder
+    :param condition: input condition
+    :param dataset: training/testing dataset
+    :param train_device: training device
+    :param decode_all_inputs: ground truth
+    :param use_teacher_forcing: Whether use teacher forcing ratio
+    :return: outputs
+    """
+    sos_token = dataset.char_dict.word_to_index['SOS']
+    eos_token = dataset.char_dict.word_to_index['EOS']
+
+    hidden_latent, cell_latent = decoder.init_hidden_and_cell(hidden_latent=hidden_latent.view(1, 1, -1),
+                                                              cell_latent=cell_latent.view(1, 1, -1),
+                                                              input_condition=condition)
+
+    outputs = []
+    decode_input = LongTensor([sos_token]).to(train_device)
+    decode_length = decode_all_inputs.size(0)
+    for idx in range(decode_length):
+        decode_input = decode_input.detach()
+        output, hidden_latent, cell_latent = decoder.forward(inputs=decode_input,
+                                                             hidden_latent=hidden_latent,
+                                                             cell_latent=cell_latent)
+        outputs.append(output)
+        output_one_hot = torch.max(torch.softmax(output, dim=1), 1)[1]
+        if output_one_hot.item() == eos_token and not use_teacher_forcing:
+            break
+
+        if use_teacher_forcing:
+            decode_input = decode_all_inputs[idx + 1: idx + 2]
+        else:
+            decode_input = output_one_hot
+    if len(outputs) != 0:
+        outputs = cat(outputs, dim=0)
+    else:
+        outputs = torch.FloatTensor([]).view(0, input_size).to(train_device)
+
+    return outputs
+
+
+def train(input_size: int,
+          condition_size: int,
+          hidden_size: int,
+          latent_size: int,
+          condition_embedding_size: int,
+          kl_weight: float,
+          teacher_forcing_ratio: float,
+          learning_rate: float,
+          epochs: int,
+          train_device: device,
+          train_dataset: TenseLoader,
+          test_dataset: TenseLoader) -> None:
     """
     Train CVAE
     :param input_size: word size
@@ -382,12 +483,29 @@ def train(input_size: int, condition_size: int, hidden_size: int, latent_size: i
                          train_device=train_device)
     decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
 
+    # Losses and scores
+    losses_and_scores = {
+        'Cross entropy loss': [0 for _ in range(epochs)],
+        'KL loss': [0 for _ in range(epochs)],
+        'BLEU-4 score': [0 for _ in range(epochs)]
+    }
+
+    # For storing model
+    stored_check_point = {
+        'epoch': None,
+        'encoder_state_dict': None,
+        'encoder_optimizer_state_dict': None,
+        'decoder_state_dict': None,
+        'decoder_optimizer_state_dict': None
+    }
+
     # Start training
     info_log('Start training')
     for epoch in tqdm(range(epochs)):
         encoder.train()
         decoder.train()
 
+        # Train model
         for inputs, condition in train_dataset:
             inputs = inputs.to(train_device)
             encoder_optimizer.zero_grad()
@@ -404,46 +522,77 @@ def train(input_size: int, condition_size: int, hidden_size: int, latent_size: i
             use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
             # Decode
-            sos_token = train_dataset.char_dict.word_to_index['SOS']
-            eos_token = train_dataset.char_dict.word_to_index['EOS']
-
-            hidden_latent, cell_latent = decoder.init_hidden_and_cell(hidden_latent=hidden_latent.view(1, 1, -1),
-                                                                      cell_latent=cell_latent.view(1, 1, -1),
-                                                                      input_condition=condition)
-
-            outputs = []
-            decode_input = LongTensor([sos_token]).to(train_device)
-            decode_all_input = inputs[:-1]
-            decode_length = decode_all_input.size(0)
-            for idx in range(decode_length):
-                decode_input = decode_input.detach()
-                output, hidden_latent, cell_latent = decoder.forward(inputs=decode_input,
-                                                                     hidden_latent=hidden_latent,
-                                                                     cell_latent=cell_latent)
-                outputs.append(output)
-                output_one_hot = torch.max(torch.softmax(output, dim=1), 1)[1]
-                if output_one_hot.item() == eos_token and not use_teacher_forcing:
-                    break
-
-                if use_teacher_forcing:
-                    decode_input = decode_all_input[idx + 1: idx + 2]
-                else:
-                    decode_input = output_one_hot
-            if len(outputs) != 0:
-                outputs = cat(outputs, dim=0)
-            else:
-                outputs = torch.FloatTensor([]).view(0, input_size).to(train_device)
+            decode_all_inputs = inputs[:-1]
+            outputs = decode(input_size=input_size,
+                             decoder=decoder,
+                             hidden_latent=hidden_latent,
+                             cell_latent=cell_latent,
+                             condition=condition,
+                             dataset=train_dataset,
+                             train_device=train_device,
+                             decode_all_inputs=decode_all_inputs,
+                             use_teacher_forcing=use_teacher_forcing)
 
             # Backpropagation
-            reconstruction_loss = nn.CrossEntropyLoss(reduction='sum')(outputs, decode_all_input.to(train_device))
-            regularization_loss = kl_loss(hidden_mean=hidden_mean,
-                                          hidden_log_variance=hidden_log_var,
-                                          cell_mean=cell_mean,
-                                          cell_log_variance=cell_log_var)
-            (reconstruction_loss + (kl_weight * regularization_loss)).backward()
+            cross_entropy_loss = nn.CrossEntropyLoss()(outputs, decode_all_inputs.to(train_device))
+            kld_loss = kl_loss(hidden_mean=hidden_mean,
+                               hidden_log_variance=hidden_log_var,
+                               cell_mean=cell_mean,
+                               cell_log_variance=cell_log_var)
+            (cross_entropy_loss + (kl_weight * kld_loss)).backward()
+
+            losses_and_scores['Cross entropy loss'][epoch] += cross_entropy_loss.item()
+            losses_and_scores['KL loss'][epoch] += kld_loss.item()
+            if np.isnan(cross_entropy_loss.item()) or np.isnan(kld_loss.item()):
+                raise AttributeError(f'Cross entropy loss: {cross_entropy_loss.item()}, KLD loss: {kld_loss.item()}')
 
             encoder_optimizer.step()
             decoder_optimizer.step()
+
+        # Test
+        encoder.eval()
+        decoder.eval()
+        for inputs, input_condition, targets, target_condition in test_dataset:
+            inputs.to(train_device)
+            targets.to(train_device)
+
+            hidden, cell = encoder.forward(inputs=inputs[1:],
+                                           prev_hidden=encoder.init_hidden_or_cell(),
+                                           prev_cell=encoder.init_hidden_or_cell(),
+                                           input_condition=input_condition)
+            _, _, hidden_latent = hidden
+            _, _, cell_latent = cell
+            outputs = decode(input_size=input_size,
+                             decoder=decoder,
+                             hidden_latent=hidden_latent,
+                             cell_latent=cell_latent,
+                             condition=target_condition,
+                             dataset=test_dataset,
+                             train_device=train_device)
+
+            outputs_one_hot = LongTensor(torch.max(torch.softmax(outputs, dim=1), 1)[1])
+            inputs_str = test_dataset.char_dict.long_tensor_to_string(inputs)
+            targets_str = test_dataset.char_dict.long_tensor_to_string(targets)
+            outputs_str = test_dataset.char_dict.long_tensor_to_string(outputs_one_hot)
+            debug_log(f'Input: {inputs_str}')
+            debug_log(f'Target: {targets_str}')
+            debug_log(f'Output: {outputs_str}\n')
+
+            # Compute BLEU-4 score
+            losses_and_scores['BLEU-4 score'][epoch] += compute_bleu(outputs_str, targets_str)
+        losses_and_scores['BLEU-4 score'][epoch] /= len(test_dataset)
+        debug_log(f'Average BLEU-4 score: {losses_and_scores["BLEU-4 score"][epoch]}')
+
+        if not os.path.exists('./model'):
+            os.mkdir('./model')
+        stored_check_point['epoch'] = epoch
+        stored_check_point['encoder_state_dict'] = encoder.state_dict()
+        stored_check_point['encoder_optimizer_state_dict'] = encoder_optimizer.state_dict()
+        stored_check_point['decoder_state_dict'] = decoder.state_dict()
+        stored_check_point['decoder_optimizer_state_dict'] = decoder_optimizer.state_dict()
+        save(stored_check_point, f'./model/CVAE-{losses_and_scores["BLEU-4 score"][epoch]}.pt')
+
+    show_results(epochs=epochs, losses_and_scores=losses_and_scores)
 
 
 def info_log(log: str) -> None:
@@ -516,7 +665,7 @@ def parse_arguments() -> Namespace:
     parser.add_argument('-ls', '--latent_size', default=32, type=int, help='Latent size')
     parser.add_argument('-c', '--condition_embedding_size', default=8, type=int, help='Condition embedding size')
     parser.add_argument('-k', '--kl_weight', default=0.0, type=check_float_type, help='KL weight')
-    parser.add_argument('-t', '--teacher_forcing_ratio', default=1.0, type=check_float_type,
+    parser.add_argument('-t', '--teacher_forcing_ratio', default=0.5, type=check_float_type,
                         help='Teacher forcing ratio')
     parser.add_argument('-lr', '--learning_rate', default=0.05, type=float, help='Learning rate')
     parser.add_argument('-e', '--epochs', default=100, type=int, help='Number of epochs')
