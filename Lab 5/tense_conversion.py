@@ -364,7 +364,8 @@ def show_results(epochs: int, losses_and_scores: Dict[str, List[float]]) -> None
     curve_4, = ax_2.plot(range(epochs), losses_and_scores['Gaussian score'], '.', label='Gaussian score')
     curve_5, = ax_2.plot(range(epochs), losses_and_scores['Teacher forcing ratio'], '--', label='Teacher forcing ratio')
     curve_6, = ax_2.plot(range(epochs), losses_and_scores['KL weight'], '--', label='KL weight')
-    ax_1.legend(handles=[curve_1, curve_2, curve_3, curve_4, curve_5, curve_6])
+    ax_1.legend(handles=[curve_1, curve_2, curve_3, curve_4, curve_5, curve_6], loc='lower right')
+    ax_2.legend(handles=[])
 
     plt.legend(loc='lower right')
     plt.tight_layout()
