@@ -353,21 +353,23 @@ def show_results(epochs: int, losses_and_scores: Dict[str, List[float]]) -> None
     # Plot losses
     fig, ax_1 = plt.subplots()
     plt.title('Training loss and score')
+    ax_1.set_xlabel('Epoch')
+    ax_1.set_ylabel('Loss')
     ax_2 = ax_1.twinx()
+    ax_2.set_ylabel('Score or Weight')
 
-    curve_1, = ax_1.plot(range(epochs), losses_and_scores['BLEU-4 score'], '.', label='BLEU-4 score')
-    curve_2, = ax_1.plot(range(epochs), losses_and_scores['Gaussian score'], '.', label='Gaussian score')
-    curve_3, = ax_1.plot(range(epochs), losses_and_scores['Teacher forcing ratio'], '--', label='Teacher forcing ratio')
-    curve_4, = ax_1.plot(range(epochs), losses_and_scores['KL weight'], '--', label='KL weight')
-    curve_5, = ax_2.plot(range(epochs), losses_and_scores['KL loss'], label='KL loss')
-    curve_6, = ax_2.plot(range(epochs), losses_and_scores['Cross entropy loss'], label='Cross entropy loss')
-    curves = [curve_1, curve_2, curve_3, curve_4, curve_5, curve_6]
-    ax_1.legend(curves, [curve.get_label() for curve in curves])
+    curve_1, = ax_1.plot(range(epochs), losses_and_scores['KL loss'], label='KL loss')
+    curve_2, = ax_1.plot(range(epochs), losses_and_scores['Cross entropy loss'], label='Cross entropy loss')
+    curve_3, = ax_2.plot(range(epochs), losses_and_scores['BLEU-4 score'], '.', label='BLEU-4 score')
+    curve_4, = ax_2.plot(range(epochs), losses_and_scores['Gaussian score'], '.', label='Gaussian score')
+    curve_5, = ax_2.plot(range(epochs), losses_and_scores['Teacher forcing ratio'], '--', label='Teacher forcing ratio')
+    curve_6, = ax_2.plot(range(epochs), losses_and_scores['KL weight'], '--', label='KL weight')
+    ax_1.legend(handles=[curve_1, curve_2, curve_3, curve_4, curve_5, curve_6])
 
     plt.legend(loc='lower right')
     plt.tight_layout()
     plt.savefig(f'./results/figure.png')
-    plt.show()
+    plt.close()
 
 
 def decode(input_size: int,
