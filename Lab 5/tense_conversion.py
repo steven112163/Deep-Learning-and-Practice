@@ -363,7 +363,7 @@ def show_results(epochs: int, losses_and_scores: Dict[str, List[float]]) -> None
         ax_2.plot(range(epochs), losses_and_scores['KL loss'], label='KL loss'),
         ax_2.plot(range(epochs), losses_and_scores['Cross entropy loss'], label='Cross entropy loss'),
     ]
-    ax_1.legent(plots, [plot.get_label() for plot in plots])
+    ax_1.legend(plots, [plot.get_label() for plot in plots])
 
     plt.legend(loc='lower right')
     plt.tight_layout()
@@ -577,7 +577,7 @@ def train(input_size: int,
             # Compute BLEU-4 score
             losses_and_scores['BLEU-4 score'][epoch] += compute_bleu(outputs_str, targets_str)
         losses_and_scores['BLEU-4 score'][epoch] /= len(test_dataset)
-        debug_log(f'Average BLEU-4 score: {losses_and_scores["BLEU-4 score"][epoch]:.2f}')
+        info_log(f'Average BLEU-4 score: {losses_and_scores["BLEU-4 score"][epoch]:.2f}')
 
         # Compute Gaussian score
         words = []
@@ -598,7 +598,7 @@ def train(input_size: int,
                 group.append(outputs_str)
             words.append(group)
         losses_and_scores['Gaussian score'][epoch] = gaussian_score(words)
-        debug_log(f'Gaussian score: {losses_and_scores["Gaussian score"][epoch]:.2f}')
+        info_log(f'Gaussian score: {losses_and_scores["Gaussian score"][epoch]:.2f}')
 
         if not os.path.exists('./model'):
             os.mkdir('./model')
