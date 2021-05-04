@@ -166,7 +166,7 @@ class EncoderRNN(nn.Module):
                                       out_features=latent_size)
 
     def forward(self, inputs: LongTensor, prev_hidden: Tensor, prev_cell: Tensor,
-                input_condition: int) -> Tuple[Tuple[Tensor, ...], Tuple[Tensor, ...]]:
+                input_condition: LongTensor) -> Tuple[Tuple[Tensor, ...], Tuple[Tensor, ...]]:
         """
         Forward propagation
         :param inputs: inputs
@@ -175,14 +175,11 @@ class EncoderRNN(nn.Module):
         :param input_condition: input conditions
         :return: (hidden mean, hidden log variance, hidden latent), (cell mean, cell log variance, cell latent)
         """
-        # Embed condition
-        embedded_condition = self.embed_condition(input_condition)
-
-        # Concatenate previous hidden state with embedded condition to get current hidden state
-        hidden_state = cat((prev_hidden, embedded_condition), dim=2)
+        # Concatenate previous hidden state with input condition to get current hidden state
+        hidden_state = cat((prev_hidden, input_condition), dim=2)
 
         # Concatenate previous cell state with embedded condition to get current cell state
-        cell_state = cat((prev_cell, embedded_condition), dim=2)
+        cell_state = cat((prev_cell, input_condition), dim=2)
 
         # Embed inputs
         embedded_inputs = self.input_embedding(inputs).view(-1, 1, self.hidden_size)
@@ -210,7 +207,7 @@ class EncoderRNN(nn.Module):
         """
         return torch.zeros(1, 1, self.hidden_size - self.condition_embedding_size, device=self.train_device)
 
-    def embed_condition(self, condition: int) -> Tensor:
+    def embed_condition(self, condition: int) -> LongTensor:
         """
         Embed condition
         :param condition: original condition
@@ -287,7 +284,7 @@ class DecoderRNN(nn.Module):
         return self.hidden_latent_to_hidden_state(concatenated_hidden_latent), self.cell_latent_to_cell_state(
             concatenated_cell_latent)
 
-    def embed_condition(self, condition: int) -> Tensor:
+    def embed_condition(self, condition: int) -> LongTensor:
         """
         Embed condition
         :param condition: original condition
@@ -515,7 +512,7 @@ def train(input_size: int,
             hidden, cell = encoder.forward(inputs=inputs[1:],
                                            prev_hidden=encoder.init_hidden_or_cell(),
                                            prev_cell=encoder.init_hidden_or_cell(),
-                                           input_condition=condition)
+                                           input_condition=encoder.embed_condition(condition))
             hidden_mean, hidden_log_var, hidden_latent = hidden
             cell_mean, cell_log_var, cell_latent = cell
 
