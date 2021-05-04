@@ -505,8 +505,12 @@ def train(target_model: str,
             cuda.empty_cache()
 
     # Show results
-    show_results(target_model=target_model, epochs=last_epoch + epochs, accuracy=accuracy, prediction=prediction,
-                 ground_truth=ground_truth, keys=keys, show_only=show_only)
+    show_results(target_model=target_model,
+                 epochs=last_epoch + epochs if not show_only else last_epoch,
+                 accuracy=accuracy,
+                 prediction=prediction,
+                 ground_truth=ground_truth,
+                 keys=keys, show_only=show_only)
 
 
 def info_log(log: str) -> None:
