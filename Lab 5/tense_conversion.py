@@ -969,9 +969,9 @@ def main() -> None:
     latent_size = arguments.latent_size
     condition_embedding_size = arguments.condition_embedding_size
     kl_weight = arguments.kl_weight
-    kl_type = arguments.kl_type
+    kl_type = arguments.kl_weight_type
     teacher_forcing_ratio = arguments.teacher_forcing_ratio
-    teacher_type = arguments.teacher_type
+    teacher_type = arguments.teacher_forcing_type
     learning_rate = arguments.learning_rate
     epochs = arguments.epochs
     load_or_not = arguments.load
