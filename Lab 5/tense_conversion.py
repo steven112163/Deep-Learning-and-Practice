@@ -397,11 +397,11 @@ def show_results(epochs: int, losses_and_scores: Dict[str, List[float]]) -> None
 
     # Plot losses
     fig, ax_1 = plt.subplots()
-    plt.title('Training loss and score')
+    plt.title('Training loss/ratio curve')
     ax_1.set_xlabel('Epoch')
     ax_1.set_ylabel('Loss')
     ax_2 = ax_1.twinx()
-    ax_2.set_ylabel('Score or Weight')
+    ax_2.set_ylabel('Score / Weight')
 
     curve_1, = ax_1.plot(range(epochs), losses_and_scores['KL loss'], label='KL loss')
     curve_2, = ax_1.plot(range(epochs), losses_and_scores['Cross entropy loss'], label='Cross entropy loss')
@@ -636,13 +636,24 @@ def train(input_size: int,
     last_epoch = check_point['epoch'] if load_or_not else 0
 
     # Losses and scores
-    if load_or_not:
+    if show_only:
         losses_and_scores = {
-            'Cross entropy loss': last_losses_and_scores['Cross entropy loss'][:last_epoch] + [0.0 for _ in range(epochs)],
+            'Cross entropy loss': last_losses_and_scores['Cross entropy loss'][:last_epoch],
+            'KL loss': last_losses_and_scores['KL loss'][:last_epoch],
+            'BLEU-4 score': last_losses_and_scores['BLEU-4 score'][:last_epoch],
+            'Gaussian score': last_losses_and_scores['Gaussian score'][:last_epoch],
+            'Teacher forcing ratio': last_losses_and_scores['Teacher forcing ratio'][:last_epoch],
+            'KL weight': last_losses_and_scores['KL weight'][:last_epoch]
+        }
+    elif load_or_not:
+        losses_and_scores = {
+            'Cross entropy loss': last_losses_and_scores['Cross entropy loss'][:last_epoch] + [0.0 for _ in
+                                                                                               range(epochs)],
             'KL loss': last_losses_and_scores['KL loss'][:last_epoch] + [0.0 for _ in range(epochs)],
             'BLEU-4 score': last_losses_and_scores['BLEU-4 score'][:last_epoch] + [0.0 for _ in range(epochs)],
             'Gaussian score': last_losses_and_scores['Gaussian score'][:last_epoch] + [0.0 for _ in range(epochs)],
-            'Teacher forcing ratio': last_losses_and_scores['Teacher forcing ratio'][:last_epoch] + [0.0 for _ in range(epochs)],
+            'Teacher forcing ratio': last_losses_and_scores['Teacher forcing ratio'][:last_epoch] + [0.0 for _ in
+                                                                                                     range(epochs)],
             'KL weight': last_losses_and_scores['KL weight'][:last_epoch] + [0.0 for _ in range(epochs)]
         }
     else:
@@ -665,86 +676,90 @@ def train(input_size: int,
     }
 
     # Start training
-    info_log('Start training')
-    for epoch in tqdm(range(last_epoch, last_epoch + epochs)):
-        encoder.train()
-        decoder.train()
+    if not show_only:
+        info_log('Start training')
+        for epoch in tqdm(range(last_epoch, last_epoch + epochs)):
+            encoder.train()
+            decoder.train()
 
-        losses_and_scores['Teacher forcing ratio'][epoch] = teacher_forcing_ratio
-        losses_and_scores['KL weight'][epoch] = kl_weight
+            losses_and_scores['Teacher forcing ratio'][epoch] = teacher_forcing_ratio
+            losses_and_scores['KL weight'][epoch] = kl_weight
 
-        # Train model
-        for inputs, condition in train_dataset:
-            inputs = inputs.to(train_device)
-            encoder_optimizer.zero_grad()
-            decoder_optimizer.zero_grad()
+            # Train model
+            for inputs, condition in train_dataset:
+                inputs = inputs.to(train_device)
+                encoder_optimizer.zero_grad()
+                decoder_optimizer.zero_grad()
 
-            # Encode
-            hidden, cell = encoder.forward(inputs=inputs[1:],
-                                           prev_hidden=encoder.init_hidden_or_cell(),
-                                           prev_cell=encoder.init_hidden_or_cell(),
-                                           input_condition=condition)
-            hidden_mean, hidden_log_var, hidden_latent = hidden
-            cell_mean, cell_log_var, cell_latent = cell
+                # Encode
+                hidden, cell = encoder.forward(inputs=inputs[1:],
+                                               prev_hidden=encoder.init_hidden_or_cell(),
+                                               prev_cell=encoder.init_hidden_or_cell(),
+                                               input_condition=condition)
+                hidden_mean, hidden_log_var, hidden_latent = hidden
+                cell_mean, cell_log_var, cell_latent = cell
 
-            use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
+                use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
 
-            # Decode
-            decode_all_inputs = inputs[:-1]
-            outputs = decode(input_size=input_size,
-                             decoder=decoder,
-                             hidden_latent=hidden_latent,
-                             cell_latent=cell_latent,
-                             condition=condition,
-                             target_length=decode_all_inputs.size(0),
-                             dataset=train_dataset,
-                             train_device=train_device,
-                             decode_all_inputs=decode_all_inputs,
-                             use_teacher_forcing=use_teacher_forcing)
+                # Decode
+                decode_all_inputs = inputs[:-1]
+                outputs = decode(input_size=input_size,
+                                 decoder=decoder,
+                                 hidden_latent=hidden_latent,
+                                 cell_latent=cell_latent,
+                                 condition=condition,
+                                 target_length=decode_all_inputs.size(0),
+                                 dataset=train_dataset,
+                                 train_device=train_device,
+                                 decode_all_inputs=decode_all_inputs,
+                                 use_teacher_forcing=use_teacher_forcing)
 
-            # Backpropagation
-            cross_entropy_loss = nn.CrossEntropyLoss()(outputs, inputs[1:1 + outputs.size(0)])
-            kld_loss = kl_loss(hidden_mean=hidden_mean,
-                               hidden_log_variance=hidden_log_var,
-                               cell_mean=cell_mean,
-                               cell_log_variance=cell_log_var)
-            (cross_entropy_loss + (kl_weight * kld_loss)).backward()
+                # Backpropagation
+                cross_entropy_loss = nn.CrossEntropyLoss()(outputs, inputs[1:1 + outputs.size(0)])
+                kld_loss = kl_loss(hidden_mean=hidden_mean,
+                                   hidden_log_variance=hidden_log_var,
+                                   cell_mean=cell_mean,
+                                   cell_log_variance=cell_log_var)
+                (cross_entropy_loss + (kl_weight * kld_loss)).backward()
 
-            losses_and_scores['Cross entropy loss'][epoch] += cross_entropy_loss.item()
-            losses_and_scores['KL loss'][epoch] += kld_loss.item()
-            if np.isnan(cross_entropy_loss.item()) or np.isnan(kld_loss.item()):
-                raise AttributeError(f'Cross entropy loss: {cross_entropy_loss.item()}, KLD loss: {kld_loss.item()}')
+                losses_and_scores['Cross entropy loss'][epoch] += cross_entropy_loss.item()
+                losses_and_scores['KL loss'][epoch] += kld_loss.item()
+                if np.isnan(cross_entropy_loss.item()) or np.isnan(kld_loss.item()):
+                    raise AttributeError(
+                        f'Cross entropy loss: {cross_entropy_loss.item()}, KLD loss: {kld_loss.item()}')
 
-            encoder_optimizer.step()
-            decoder_optimizer.step()
+                encoder_optimizer.step()
+                decoder_optimizer.step()
 
-        # Test
-        encoder.eval()
-        decoder.eval()
-        losses_and_scores['BLEU-4 score'][epoch] = compute_bleu(encoder=encoder,
-                                                                decoder=decoder,
-                                                                input_size=input_size,
-                                                                test_dataset=test_dataset,
-                                                                train_device=train_device)
-        info_log(f'Average BLEU-4 score: {losses_and_scores["BLEU-4 score"][epoch]:.2f}')
+            # Test
+            encoder.eval()
+            decoder.eval()
+            losses_and_scores['BLEU-4 score'][epoch] = compute_bleu(encoder=encoder,
+                                                                    decoder=decoder,
+                                                                    input_size=input_size,
+                                                                    test_dataset=test_dataset,
+                                                                    train_device=train_device)
+            info_log(f'Average BLEU-4 score: {losses_and_scores["BLEU-4 score"][epoch]:.2f}')
 
-        # Compute Gaussian score
-        losses_and_scores['Gaussian score'][epoch] = compute_gaussian(decoder=decoder,
-                                                                      input_size=input_size,
-                                                                      latent_size=latent_size,
-                                                                      test_dataset=test_dataset,
-                                                                      train_device=train_device)
-        info_log(f'Gaussian score: {losses_and_scores["Gaussian score"][epoch]:.2f}')
+            # Compute Gaussian score
+            losses_and_scores['Gaussian score'][epoch] = compute_gaussian(decoder=decoder,
+                                                                          input_size=input_size,
+                                                                          latent_size=latent_size,
+                                                                          test_dataset=test_dataset,
+                                                                          train_device=train_device)
+            info_log(f'Gaussian score: {losses_and_scores["Gaussian score"][epoch]:.2f}')
 
-        # Save the model and losses and scores
-        stored_check_point['epoch'] = epoch + 1
-        stored_check_point['encoder_state_dict'] = encoder.state_dict()
-        stored_check_point['encoder_optimizer_state_dict'] = encoder_optimizer.state_dict()
-        stored_check_point['decoder_state_dict'] = decoder.state_dict()
-        stored_check_point['decoder_optimizer_state_dict'] = decoder_optimizer.state_dict()
-        save_model_and_loss_and_score(stored_check_point=stored_check_point, losses_and_scores=losses_and_scores)
+            # Save the model and losses and scores
+            stored_check_point['epoch'] = epoch + 1
+            stored_check_point['encoder_state_dict'] = encoder.state_dict()
+            stored_check_point['encoder_optimizer_state_dict'] = encoder_optimizer.state_dict()
+            stored_check_point['decoder_state_dict'] = decoder.state_dict()
+            stored_check_point['decoder_optimizer_state_dict'] = decoder_optimizer.state_dict()
+            save_model_and_loss_and_score(stored_check_point=stored_check_point, losses_and_scores=losses_and_scores)
 
-    show_results(epochs=epochs, losses_and_scores=losses_and_scores)
+        show_results(epochs=last_epoch + epochs, losses_and_scores=losses_and_scores)
+    else:
+        show_results(epochs=last_epoch, losses_and_scores=losses_and_scores)
 
 
 def info_log(log: str) -> None:
