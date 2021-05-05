@@ -381,8 +381,6 @@ def kl_loss(hidden_mean: Tensor, hidden_log_variance: Tensor, cell_mean: Tensor,
     :param cell_log_variance: log variance of cell state
     :return: loss
     """
-    # return torch.sum(0.5 * (hidden_log_variance - cell_log_variance) + (
-    #         torch.exp(hidden_log_variance) + (hidden_mean - cell_mean) ** 2) / torch.exp(cell_log_variance) / 2.0 - 0.5)
     return torch.sum(0.5 * (hidden_mean ** 2 + torch.exp(hidden_log_variance) - hidden_log_variance - 1
                             + cell_mean ** 2 + torch.exp(cell_log_variance) - cell_log_variance - 1))
 
