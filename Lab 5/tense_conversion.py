@@ -1,5 +1,5 @@
 from io import open
-from torch import optim, device, Tensor, LongTensor, cat, randn, exp, save
+from torch import optim, device, Tensor, LongTensor, cat, randn, exp, save, load
 from torch.utils.data import Dataset
 from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sys
 import os
+import pickle
+import json
 
 
 class CharDict:
@@ -291,6 +293,49 @@ class DecoderRNN(nn.Module):
         return self.condition_embedding(condition_tensor).view(1, 1, -1)
 
 
+def save_model_and_loss_and_score(stored_check_point, losses_and_scores) -> None:
+    """
+    Save model and losses and score
+    :return: None
+    """
+    if not os.path.exists('./model'):
+        os.mkdir('./model')
+
+    highest = None
+    if os.path.isfile('./model/highest.json'):
+        with open('./model/highest.json', 'r') as f:
+            highest = json.load(f)
+
+    max_bleu = max(losses_and_scores["BLEU-4 score"])
+    if highest:
+        if highest['bleu'] > max_bleu:
+            return
+    highest = {'bleu': max_bleu}
+    with open('./model/highest.json', 'w') as f:
+        json.dump(highest, f)
+
+    save(stored_check_point, f'./model/CVAE-{max_bleu:.2f}.pt')
+    with open(f'./model/losses_and_scores-{max_bleu:.2f}.pkl', 'wb') as f:
+        pickle.dump(losses_and_scores, f, pickle.HIGHEST_PROTOCOL)
+
+
+def load_model():
+    """
+    Load model
+    :return: checkpoint
+    """
+    return load(f'./model/CVAE.pt')
+
+
+def load_losses_and_scores():
+    """
+    Load losses and scores
+    :return: the stored object
+    """
+    with open(f'./model/losses_and_scores.pkl', 'rb') as f:
+        return pickle.load(f)
+
+
 def gaussian_score(words: List[List[str]]) -> float:
     """
     Compute Gaussian score
@@ -312,7 +357,7 @@ def gaussian_score(words: List[List[str]]) -> float:
     return score / len(words)
 
 
-def compute_bleu(output: str, reference: str) -> float:
+def bleu_score(output: str, reference: str) -> float:
     """
     Compute BLEU-4 score
     :param output: output word
@@ -425,6 +470,113 @@ def decode(input_size: int,
     return outputs
 
 
+def generate_word(decoder: DecoderRNN,
+                  input_size: int,
+                  hidden_noises: Tensor,
+                  cell_noises: Tensor,
+                  condition: int,
+                  target_length: int,
+                  test_dataset: TenseLoader,
+                  train_device: device) -> str:
+    """
+    Generate a word based on the given noise and condition
+    :param decoder: decoder
+    :param input_size: input size (word)
+    :param hidden_noises: hidden latent/noise
+    :param cell_noises: cell latent/noise
+    :param condition: given condition
+    :param target_length: target generated word length
+    :param test_dataset: testing dataset
+    :param train_device: training device
+    :return:
+    """
+    outputs = decode(input_size=input_size,
+                     decoder=decoder,
+                     hidden_latent=hidden_noises,
+                     cell_latent=cell_noises,
+                     condition=condition,
+                     target_length=target_length,
+                     dataset=test_dataset,
+                     train_device=train_device)
+    outputs_one_hot = torch.max(torch.softmax(outputs, dim=1), 1)[1]
+    return test_dataset.char_dict.long_tensor_to_string(outputs_one_hot)
+
+
+def compute_bleu(encoder: EncoderRNN,
+                 decoder: DecoderRNN,
+                 input_size: int,
+                 test_dataset: TenseLoader,
+                 train_device: device) -> float:
+    """
+    Compute BLEU-4 score for testing
+    :param encoder: encoder
+    :param decoder: decoder
+    :param input_size: input size (word)
+    :param test_dataset: testing dataset
+    :param train_device: training device
+    :return: score
+    """
+    score = 0.0
+    for inputs, input_condition, targets, target_condition in test_dataset:
+        inputs = inputs.to(train_device)
+        targets = targets.to(train_device)
+
+        hidden, cell = encoder.forward(inputs=inputs[1:],
+                                       prev_hidden=encoder.init_hidden_or_cell(),
+                                       prev_cell=encoder.init_hidden_or_cell(),
+                                       input_condition=input_condition)
+        _, _, hidden_latent = hidden
+        _, _, cell_latent = cell
+        inputs_str = test_dataset.char_dict.long_tensor_to_string(inputs)
+        targets_str = test_dataset.char_dict.long_tensor_to_string(targets)
+        outputs_str = generate_word(decoder=decoder,
+                                    input_size=input_size,
+                                    hidden_noises=hidden_latent,
+                                    cell_noises=cell_latent,
+                                    condition=target_condition,
+                                    target_length=targets[:-1].size(0),
+                                    test_dataset=test_dataset,
+                                    train_device=train_device)
+        debug_log(f'Input: {inputs_str}')
+        debug_log(f'Target: {targets_str}')
+        debug_log(f'Output: {outputs_str}\n')
+
+        # Compute BLEU-4 score
+        score += bleu_score(outputs_str, targets_str)
+    return score / len(test_dataset)
+
+
+def compute_gaussian(decoder: DecoderRNN,
+                     input_size: int,
+                     latent_size: int,
+                     test_dataset: TenseLoader,
+                     train_device: device) -> float:
+    """
+    Compute Gaussian score for testing
+    :param decoder: decoder
+    :param input_size: input size (word)
+    :param latent_size: latent size
+    :param test_dataset: testing dataset
+    :param train_device: training device
+    :return: Gaussian score
+    """
+    words = []
+    for _ in range(100):
+        hidden_noises, cell_noises = randn(latent_size).to(train_device), randn(latent_size).to(train_device)
+        group = []
+        for condition in range(len(test_dataset.tenses)):
+            group.append(generate_word(decoder=decoder,
+                                       input_size=input_size,
+                                       hidden_noises=hidden_noises,
+                                       cell_noises=cell_noises,
+                                       condition=condition,
+                                       target_length=28,
+                                       test_dataset=test_dataset,
+                                       train_device=train_device))
+        words.append(group)
+    return gaussian_score(words)
+
+
 def train(input_size: int,
           condition_size: int,
           hidden_size: int,
@@ -434,6 +586,8 @@ def train(input_size: int,
           teacher_forcing_ratio: float,
           learning_rate: float,
           epochs: int,
+          load_or_not: int,
+          show_only: int,
           train_device: device,
           train_dataset: TenseLoader,
           test_dataset: TenseLoader) -> None:
@@ -448,6 +602,8 @@ def train(input_size: int,
     :param teacher_forcing_ratio: teacher forcing ratio
     :param learning_rate: learning rate
     :param epochs: number of epochs
+    :param load_or_not: whether load the model
+    :param show_only: whether only show the stored results
     :param train_device: training device
     :param train_dataset: train dataset
     :param test_dataset: test dataset
@@ -470,15 +626,34 @@ def train(input_size: int,
                          train_device=train_device).to(train_device)
     decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
 
+    if load_or_not:
+        check_point = load_model()
+        last_losses_and_scores = load_losses_and_scores()
+        encoder.load_state_dict(check_point['encoder_state_dict'])
+        encoder_optimizer.load_state_dict(check_point['encoder_optimizer_state_dict'])
+        decoder.load_state_dict(check_point['decoder_state_dict'])
+        decoder_optimizer.load_state_dict(check_point['decoder_optimizer_state_dict'])
+    last_epoch = check_point['epoch'] if load_or_not else 0
+
     # Losses and scores
-    losses_and_scores = {
-        'Cross entropy loss': [0.0 for _ in range(epochs)],
-        'KL loss': [0.0 for _ in range(epochs)],
-        'BLEU-4 score': [0.0 for _ in range(epochs)],
-        'Gaussian score': [0.0 for _ in range(epochs)],
-        'Teacher forcing ratio': [0.0 for _ in range(epochs)],
-        'KL weight': [0.0 for _ in range(epochs)]
-    }
+    if load_or_not:
+        losses_and_scores = {
+            'Cross entropy loss': last_losses_and_scores['Cross entropy loss'][:last_epoch] + [0.0 for _ in range(epochs)],
+            'KL loss': last_losses_and_scores['KL loss'][:last_epoch] + [0.0 for _ in range(epochs)],
+            'BLEU-4 score': last_losses_and_scores['BLEU-4 score'][:last_epoch] + [0.0 for _ in range(epochs)],
+            'Gaussian score': last_losses_and_scores['Gaussian score'][:last_epoch] + [0.0 for _ in range(epochs)],
+            'Teacher forcing ratio': last_losses_and_scores['Teacher forcing ratio'][:last_epoch] + [0.0 for _ in range(epochs)],
+            'KL weight': last_losses_and_scores['KL weight'][:last_epoch] + [0.0 for _ in range(epochs)]
+        }
+    else:
+        losses_and_scores = {
+            'Cross entropy loss': [0.0 for _ in range(epochs)],
+            'KL loss': [0.0 for _ in range(epochs)],
+            'BLEU-4 score': [0.0 for _ in range(epochs)],
+            'Gaussian score': [0.0 for _ in range(epochs)],
+            'Teacher forcing ratio': [0.0 for _ in range(epochs)],
+            'KL weight': [0.0 for _ in range(epochs)]
+        }
 
     # For storing model
     stored_check_point = {
@@ -491,7 +666,7 @@ def train(input_size: int,
 
     # Start training
     info_log('Start training')
-    for epoch in tqdm(range(epochs)):
+    for epoch in tqdm(range(last_epoch, last_epoch + epochs)):
         encoder.train()
         decoder.train()
 
@@ -546,67 +721,28 @@ def train(input_size: int,
         # Test
         encoder.eval()
         decoder.eval()
-        for inputs, input_condition, targets, target_condition in test_dataset:
-            inputs = inputs.to(train_device)
-            targets = targets.to(train_device)
-
-            hidden, cell = encoder.forward(inputs=inputs[1:],
-                                           prev_hidden=encoder.init_hidden_or_cell(),
-                                           prev_cell=encoder.init_hidden_or_cell(),
-                                           input_condition=input_condition)
-            _, _, hidden_latent = hidden
-            _, _, cell_latent = cell
-            outputs = decode(input_size=input_size,
-                             decoder=decoder,
-                             hidden_latent=hidden_latent,
-                             cell_latent=cell_latent,
-                             condition=target_condition,
-                             target_length=targets[:-1].size(0),
-                             dataset=test_dataset,
-                             train_device=train_device)
-
-            outputs_one_hot = torch.max(torch.softmax(outputs, dim=1), 1)[1]
-            inputs_str = test_dataset.char_dict.long_tensor_to_string(inputs)
-            targets_str = test_dataset.char_dict.long_tensor_to_string(targets)
-            outputs_str = test_dataset.char_dict.long_tensor_to_string(outputs_one_hot)
-            debug_log(f'Input: {inputs_str}')
-            debug_log(f'Target: {targets_str}')
-            debug_log(f'Output: {outputs_str}\n')
-
-            # Compute BLEU-4 score
-            losses_and_scores['BLEU-4 score'][epoch] += compute_bleu(outputs_str, targets_str)
-        losses_and_scores['BLEU-4 score'][epoch] /= len(test_dataset)
+        losses_and_scores['BLEU-4 score'][epoch] = compute_bleu(encoder=encoder,
+                                                                decoder=decoder,
+                                                                input_size=input_size,
+                                                                test_dataset=test_dataset,
+                                                                train_device=train_device)
         info_log(f'Average BLEU-4 score: {losses_and_scores["BLEU-4 score"][epoch]:.2f}')
 
         # Compute Gaussian score
-        words = []
-        for _ in range(100):
-            hidden_noises, cell_noises = randn(latent_size).to(train_device), randn(latent_size).to(train_device)
-            group = []
-            for condition in range(len(test_dataset.tenses)):
-                outputs = decode(input_size=input_size,
-                                 decoder=decoder,
-                                 hidden_latent=hidden_noises,
-                                 cell_latent=cell_noises,
-                                 condition=condition,
-                                 target_length=28,
-                                 dataset=test_dataset,
-                                 train_device=train_device)
-                outputs_one_hot = torch.max(torch.softmax(outputs, dim=1), 1)[1]
-                outputs_str = test_dataset.char_dict.long_tensor_to_string(outputs_one_hot)
-                group.append(outputs_str)
-            words.append(group)
-        losses_and_scores['Gaussian score'][epoch] = gaussian_score(words)
+        losses_and_scores['Gaussian score'][epoch] = compute_gaussian(decoder=decoder,
+                                                                      input_size=input_size,
+                                                                      latent_size=latent_size,
+                                                                      test_dataset=test_dataset,
+                                                                      train_device=train_device)
         info_log(f'Gaussian score: {losses_and_scores["Gaussian score"][epoch]:.2f}')
 
-        if not os.path.exists('./model'):
-            os.mkdir('./model')
-        stored_check_point['epoch'] = epoch
+        # Save the model and losses and scores
+        stored_check_point['epoch'] = epoch + 1
         stored_check_point['encoder_state_dict'] = encoder.state_dict()
         stored_check_point['encoder_optimizer_state_dict'] = encoder_optimizer.state_dict()
         stored_check_point['decoder_state_dict'] = decoder.state_dict()
         stored_check_point['decoder_optimizer_state_dict'] = decoder_optimizer.state_dict()
-        save(stored_check_point, f'./model/CVAE-{losses_and_scores["BLEU-4 score"][epoch]}.pt')
+        save_model_and_loss_and_score(stored_check_point=stored_check_point, losses_and_scores=losses_and_scores)
 
     show_results(epochs=epochs, losses_and_scores=losses_and_scores)
 
@@ -659,6 +795,30 @@ def check_float_type(input_value: str) -> float:
     return float_value
 
 
+def check_load_type(input_value: str) -> int:
+    """
+    Check whether the load is 0 or 1
+    :param input_value: input string value
+    :return: integer value
+    """
+    int_value = int(input_value)
+    if int_value != 0 and int_value != 1:
+        raise ArgumentTypeError(f'Load should be 0 or 1.')
+    return int_value
+
+
+def check_show_type(input_value: str) -> int:
+    """
+    Check whether the show_only is 0 or 1
+    :param input_value: input string value
+    :return: integer value
+    """
+    int_value = int(input_value)
+    if int_value != 0 and int_value != 1:
+        raise ArgumentTypeError(f'Show_only should be 0 or 1.')
+    return int_value
+
+
 def check_verbosity_type(input_value: str) -> int:
     """
     Check whether verbosity is true or false
@@ -685,6 +845,9 @@ def parse_arguments() -> Namespace:
                         help='Teacher forcing ratio')
     parser.add_argument('-lr', '--learning_rate', default=0.007, type=float, help='Learning rate')
     parser.add_argument('-e', '--epochs', default=100, type=int, help='Number of epochs')
+    parser.add_argument('-l', '--load', default=0, type=check_load_type,
+                        help='Whether load the stored model and accuracies')
+    parser.add_argument('-s', '--show_only', default=0, type=check_show_type, help='Whether only show the results')
     parser.add_argument('-v', '--verbosity', default=0, type=check_verbosity_type, help='Verbosity level')
 
     return parser.parse_args()
@@ -704,6 +867,10 @@ def main() -> None:
     teacher_forcing_ratio = arguments.teacher_forcing_ratio
     learning_rate = arguments.learning_rate
     epochs = arguments.epochs
+    load_or_not = arguments.load
+    show_only = arguments.show_only
+    if show_only:
+        load_or_not = 1
     global verbosity
     verbosity = arguments.verbosity
     info_log(f'Hidden size: {hidden_size}')
@@ -713,6 +880,8 @@ def main() -> None:
     info_log(f'Teacher forcing ratio: {teacher_forcing_ratio}')
     info_log(f'Learning rate: {learning_rate}')
     info_log(f'Number of epochs: {epochs}')
+    info_log(f'Use loaded model: {"True" if load_or_not else "False"}')
+    info_log(f'Only show the results: {"True" if show_only else "False"}')
 
     # Get training device
     train_device = device("cuda" if cuda.is_available() else "cpu")
@@ -733,6 +902,8 @@ def main() -> None:
           teacher_forcing_ratio=teacher_forcing_ratio,
           learning_rate=learning_rate,
           epochs=epochs,
+          load_or_not=load_or_not,
+          show_only=show_only,
           train_device=train_device,
           train_dataset=train_dataset,
           test_dataset=test_dataset)
