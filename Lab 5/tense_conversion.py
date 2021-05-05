@@ -776,7 +776,7 @@ def train(input_size: int,
                                  use_teacher_forcing=use_teacher_forcing)
 
                 # Backpropagation
-                cross_entropy_loss = nn.CrossEntropyLoss()(outputs, inputs[1:1 + outputs.size(0)])
+                cross_entropy_loss = nn.CrossEntropyLoss(reduction='sum')(outputs, inputs[1:1 + outputs.size(0)])
                 kld_loss = kl_loss(hidden_mean=hidden_mean,
                                    hidden_log_variance=hidden_log_var,
                                    cell_mean=cell_mean,
