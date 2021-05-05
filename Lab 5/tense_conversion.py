@@ -577,13 +577,60 @@ def compute_gaussian(decoder: DecoderRNN,
     return gaussian_score(words)
 
 
+def get_current_teacher_forcing_ratio(epoch: int) -> float:
+    """
+    Get current teacher forcing ratio based on current epoch
+    :param epoch: current epoch
+    :return: teacher forcing ratio
+    """
+    if epoch < 150:
+        return 1.0
+
+    ratio = 1.0 - 0.005 * (epoch - 150)
+    if ratio <= 0.0:
+        return ratio
+    return ratio
+
+
+def monotonic_kl_annealing(epoch: int) -> float:
+    """
+    Get monotonic KL cost annealing based on current epoch
+    :param epoch: current epoch
+    :return: KL weight
+    """
+    if epoch < 50:
+        return 0.0
+
+    weight = 0.0016 * (epoch - 50)
+    if weight >= 1.0:
+        return 1.0
+    return weight
+
+
+def cyclical_kl_annealing(epoch: int) -> float:
+    """
+    Get cyclical KL cost annealing based on current epoch
+    :param epoch: current epoch
+    :return: KL weight
+    """
+    if epoch < 50:
+        return 0.0
+
+    weight = 0.0032 * ((epoch - 50) % 625)
+    if weight >= 1.0:
+        return 1.0
+    return weight
+
+
 def train(input_size: int,
           condition_size: int,
           hidden_size: int,
           latent_size: int,
           condition_embedding_size: int,
           kl_weight: float,
+          kl_type: str,
           teacher_forcing_ratio: float,
+          teacher_type: str,
           learning_rate: float,
           epochs: int,
           load_or_not: int,
@@ -599,7 +646,9 @@ def train(input_size: int,
     :param latent_size: latent size
     :param condition_embedding_size: embedded condition size
     :param kl_weight: KL weight
+    :param kl_type: use 'fixed, 'monotonic' or 'cyclical' KL weight
     :param teacher_forcing_ratio: teacher forcing ratio
+    :param teacher_type: use 'fixed' or 'decreasing' teacher forcing ratio
     :param learning_rate: learning rate
     :param epochs: number of epochs
     :param load_or_not: whether load the model
@@ -682,8 +731,19 @@ def train(input_size: int,
             encoder.train()
             decoder.train()
 
-            losses_and_scores['Teacher forcing ratio'][epoch] = teacher_forcing_ratio
-            losses_and_scores['KL weight'][epoch] = kl_weight
+            # Get current teacher forcing ratio
+            if teacher_type == 'fixed':
+                losses_and_scores['Teacher forcing ratio'][epoch] = teacher_forcing_ratio
+            else:
+                losses_and_scores['Teacher forcing ratio'][epoch] = get_current_teacher_forcing_ratio(epoch)
+
+            # Get current KL weight
+            if kl_type == 'fixed':
+                losses_and_scores['KL weight'][epoch] = kl_weight
+            elif kl_type == 'monotonic':
+                losses_and_scores['KL weight'][epoch] = monotonic_kl_annealing(epoch)
+            else:
+                losses_and_scores['KL weight'][epoch] = cyclical_kl_annealing(epoch)
 
             # Train model
             for inputs, condition in train_dataset:
@@ -699,7 +759,7 @@ def train(input_size: int,
                 hidden_mean, hidden_log_var, hidden_latent = hidden
                 cell_mean, cell_log_var, cell_latent = cell
 
-                use_teacher_forcing = True if random.random() < teacher_forcing_ratio else False
+                use_teacher_forcing = True if random.random() < losses_and_scores['Teacher forcing ratio'][epoch] else False
 
                 # Decode
                 decode_all_inputs = inputs[:-1]
@@ -720,7 +780,7 @@ def train(input_size: int,
                                    hidden_log_variance=hidden_log_var,
                                    cell_mean=cell_mean,
                                    cell_log_variance=cell_log_var)
-                (cross_entropy_loss + (kl_weight * kld_loss)).backward()
+                (cross_entropy_loss + (losses_and_scores['KL weight'][epoch] * kld_loss)).backward()
 
                 losses_and_scores['Cross entropy loss'][epoch] += cross_entropy_loss.item()
                 losses_and_scores['KL loss'][epoch] += kld_loss.item()
@@ -759,6 +819,8 @@ def train(input_size: int,
 
         show_results(epochs=last_epoch + epochs, losses_and_scores=losses_and_scores)
     else:
+        info_log(f'Max average BLEU-4 score: {max(losses_and_scores["BLEU-4 score"]):.2f}')
+        info_log(f'Max Gaussian score: {max(losses_and_scores["Gaussian score"]):.2f}')
         show_results(epochs=last_epoch, losses_and_scores=losses_and_scores)
 
 
@@ -810,6 +872,30 @@ def check_float_type(input_value: str) -> float:
     return float_value
 
 
+def check_kl_type(input_value: str) -> str:
+    """
+    Check whether KL annealing type is fixed, monotonic or cyclical
+    :param input_value: input string value
+    :return: output string value
+    """
+    lower_input = input_value.lower()
+    if lower_input != 'fixed' and lower_input != 'monotonic' and lower_input != 'cyclical':
+        raise ArgumentTypeError(f'KL type should be "fixed", "monotonic" or "cyclical"')
+    return lower_input
+
+
+def check_teacher_type(input_value: str) -> str:
+    """
+    Check whether teacher forcing type is fixed or decreasing
+    :param input_value: input string value
+    :return: output string value
+    """
+    lower_input = input_value.lower()
+    if lower_input != 'fixed' and lower_input != 'decreasing':
+        raise ArgumentTypeError(f'Teacher forcing type should be "fixed" or "decreasing"')
+    return lower_input
+
+
 def check_load_type(input_value: str) -> int:
     """
     Check whether the load is 0 or 1
@@ -856,8 +942,12 @@ def parse_arguments() -> Namespace:
     parser.add_argument('-ls', '--latent_size', default=32, type=int, help='Latent size')
     parser.add_argument('-c', '--condition_embedding_size', default=8, type=int, help='Condition embedding size')
     parser.add_argument('-k', '--kl_weight', default=0.0, type=check_float_type, help='KL weight')
+    parser.add_argument('-kt', '--kl_weight_type', default='monotonic', type=check_kl_type,
+                        help='Fixed, monotonic or cyclical KL weight')
     parser.add_argument('-t', '--teacher_forcing_ratio', default=0.5, type=check_float_type,
                         help='Teacher forcing ratio')
+    parser.add_argument('-tt', '--teacher_forcing_type', default='decreasing', type=check_teacher_type,
+                        help='Fixed or decreasing teacher forcing ratio')
     parser.add_argument('-lr', '--learning_rate', default=0.007, type=float, help='Learning rate')
     parser.add_argument('-e', '--epochs', default=100, type=int, help='Number of epochs')
     parser.add_argument('-l', '--load', default=0, type=check_load_type,
@@ -879,7 +969,9 @@ def main() -> None:
     latent_size = arguments.latent_size
     condition_embedding_size = arguments.condition_embedding_size
     kl_weight = arguments.kl_weight
+    kl_type = arguments.kl_type
     teacher_forcing_ratio = arguments.teacher_forcing_ratio
+    teacher_type = arguments.teacher_type
     learning_rate = arguments.learning_rate
     epochs = arguments.epochs
     load_or_not = arguments.load
@@ -914,7 +1006,9 @@ def main() -> None:
           latent_size=latent_size,
           condition_embedding_size=condition_embedding_size,
           kl_weight=kl_weight,
+          kl_type=kl_type,
           teacher_forcing_ratio=teacher_forcing_ratio,
+          teacher_type=teacher_type,
           learning_rate=learning_rate,
           epochs=epochs,
           load_or_not=load_or_not,
