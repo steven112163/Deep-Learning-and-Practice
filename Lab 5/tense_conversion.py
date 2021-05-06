@@ -306,16 +306,21 @@ def save_model_and_loss_and_score(stored_check_point, losses_and_scores) -> None
         with open('./model/highest.json', 'r') as f:
             highest = json.load(f)
 
-    max_bleu = max(losses_and_scores["BLEU-4 score"])
+    max_bleu = max(losses_and_scores['BLEU-4 score'])
+    max_epoch = losses_and_scores['BLEU-4 score'].index(max_bleu)
+    max_gaussian = losses_and_scores['Gaussian score'][max_epoch]
     if highest:
-        if highest['bleu'] > max_bleu:
+        if highest['bleu'] > max_bleu or highest['gaussian'] > max_gaussian:
             return
-    highest = {'bleu': max_bleu}
+    highest = {
+        'bleu': max_bleu,
+        'gaussian': max_gaussian
+    }
     with open('./model/highest.json', 'w') as f:
         json.dump(highest, f)
 
-    save(stored_check_point, f'./model/CVAE-{max_bleu:.2f}.pt')
-    with open(f'./model/losses_and_scores-{max_bleu:.2f}.pkl', 'wb') as f:
+    save(stored_check_point, f'./model/CVAE-{max_bleu:.2f}-{max_gaussian:.2f}.pt')
+    with open(f'./model/losses_and_scores-{max_bleu:.2f}-{max_gaussian:.2f}.pkl', 'wb') as f:
         pickle.dump(losses_and_scores, f, pickle.HIGHEST_PROTOCOL)
 
 
@@ -746,6 +751,7 @@ def train(input_size: int,
                 losses_and_scores['KL weight'][epoch] = cyclical_kl_annealing(epoch)
 
             # Train model
+            total_cross_entropy_loss, total_kl_loss = 0, 0
             for inputs, condition in train_dataset:
                 inputs = inputs.to(train_device)
                 encoder_optimizer.zero_grad()
@@ -783,14 +789,16 @@ def train(input_size: int,
                                    cell_log_variance=cell_log_var)
                 (cross_entropy_loss + (losses_and_scores['KL weight'][epoch] * kld_loss)).backward()
 
-                losses_and_scores['Cross entropy loss'][epoch] += cross_entropy_loss.item()
-                losses_and_scores['KL loss'][epoch] += kld_loss.item()
+                total_cross_entropy_loss += cross_entropy_loss.item()
+                total_kl_loss += kld_loss.item()
                 if np.isnan(cross_entropy_loss.item()) or np.isnan(kld_loss.item()):
                     raise AttributeError(
                         f'Cross entropy loss: {cross_entropy_loss.item()}, KLD loss: {kld_loss.item()}')
 
                 encoder_optimizer.step()
                 decoder_optimizer.step()
+            losses_and_scores['Cross entropy loss'][epoch] = total_cross_entropy_loss / len(train_dataset)
+            losses_and_scores['KL loss'][epoch] = total_kl_loss / len(train_dataset)
 
             # Test
             encoder.eval()
@@ -820,8 +828,11 @@ def train(input_size: int,
 
         show_results(epochs=last_epoch + epochs, losses_and_scores=losses_and_scores)
     else:
-        info_log(f'Max average BLEU-4 score: {max(losses_and_scores["BLEU-4 score"]):.2f}')
-        info_log(f'Max Gaussian score: {max(losses_and_scores["Gaussian score"]):.2f}')
+        max_bleu = max(losses_and_scores['BLEU-4 score'])
+        max_epoch = losses_and_scores['BLEU-4 score'].index(max_bleu)
+        max_gaussian = losses_and_scores['Gaussian score'][max_epoch]
+        print(f'Max average BLEU-4 score: {max_bleu:.2f}')
+        print(f'Max Gaussian score: {max_gaussian:.2f}')
         show_results(epochs=last_epoch, losses_and_scores=losses_and_scores)
 
 
