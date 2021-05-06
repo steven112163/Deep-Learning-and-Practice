@@ -311,7 +311,10 @@ def save_model_and_loss_and_score(stored_check_point, losses_and_scores, epoch: 
     max_bleu = losses_and_scores['BLEU-4 score'][epoch]
     max_gaussian = losses_and_scores['Gaussian score'][epoch]
     if highest:
-        if highest['bleu'] > max_bleu or highest['gaussian'] > max_gaussian:
+        if max_bleu >= 0.7 and highest['bleu'] >= 0.7:
+            if highest['gaussian'] > max_gaussian:
+                return
+        elif highest['bleu'] > max_bleu or highest['gaussian'] > max_gaussian:
             return
     highest = {
         'bleu': max_bleu,
