@@ -293,9 +293,11 @@ class DecoderRNN(nn.Module):
         return self.condition_embedding(condition_tensor).view(1, 1, -1)
 
 
-def save_model_and_loss_and_score(stored_check_point, losses_and_scores) -> None:
+def save_model_and_loss_and_score(stored_check_point, losses_and_scores, epoch: int) -> None:
     """
     Save model and losses and score
+    :param stored_check_point: stored model check point
+    :param losses_and_scores: cross entropy loss, KL loss, BLEU-4 score and Gaussian score
     :return: None
     """
     if not os.path.exists('./model'):
@@ -306,9 +308,8 @@ def save_model_and_loss_and_score(stored_check_point, losses_and_scores) -> None
         with open('./model/highest.json', 'r') as f:
             highest = json.load(f)
 
-    max_bleu = max(losses_and_scores['BLEU-4 score'])
-    max_epoch = losses_and_scores['BLEU-4 score'].index(max_bleu)
-    max_gaussian = losses_and_scores['Gaussian score'][max_epoch]
+    max_bleu = losses_and_scores['BLEU-4 score'][epoch]
+    max_gaussian = losses_and_scores['Gaussian score'][epoch]
     if highest:
         if highest['bleu'] > max_bleu or highest['gaussian'] > max_gaussian:
             return
@@ -824,15 +825,15 @@ def train(input_size: int,
             stored_check_point['encoder_optimizer_state_dict'] = encoder_optimizer.state_dict()
             stored_check_point['decoder_state_dict'] = decoder.state_dict()
             stored_check_point['decoder_optimizer_state_dict'] = decoder_optimizer.state_dict()
-            save_model_and_loss_and_score(stored_check_point=stored_check_point, losses_and_scores=losses_and_scores)
+            save_model_and_loss_and_score(stored_check_point=stored_check_point, losses_and_scores=losses_and_scores,
+                                          epoch=epoch)
 
         show_results(epochs=last_epoch + epochs, losses_and_scores=losses_and_scores)
     else:
-        max_bleu = max(losses_and_scores['BLEU-4 score'])
-        max_epoch = losses_and_scores['BLEU-4 score'].index(max_bleu)
-        max_gaussian = losses_and_scores['Gaussian score'][max_epoch]
-        print(f'Max average BLEU-4 score: {max_bleu:.2f}')
-        print(f'Max Gaussian score: {max_gaussian:.2f}')
+        with open('./model/highest.json', 'r') as f:
+            highest = json.load(f)
+        print(f'Max average BLEU-4 score: {highest["bleu"]:.2f}')
+        print(f'Max Gaussian score: {highest["gaussian"]:.2f}')
         show_results(epochs=last_epoch, losses_and_scores=losses_and_scores)
 
 
