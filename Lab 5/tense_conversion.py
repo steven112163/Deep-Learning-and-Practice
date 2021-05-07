@@ -808,6 +808,8 @@ def train(input_size: int,
             # Test
             encoder.eval()
             decoder.eval()
+
+            # Compute BLEU-4 score
             losses_and_scores['BLEU-4 score'][epoch] = compute_bleu(encoder=encoder,
                                                                     decoder=decoder,
                                                                     input_size=input_size,
@@ -834,10 +836,32 @@ def train(input_size: int,
 
         show_results(epochs=last_epoch + epochs, losses_and_scores=losses_and_scores)
     else:
+        info_log('Start inference')
+        encoder.eval()
+        decoder.eval()
+
+        # Compute BLEU-4 score
+        show_only_bleu = compute_bleu(encoder=encoder,
+                                      decoder=decoder,
+                                      input_size=input_size,
+                                      test_dataset=test_dataset,
+                                      train_device=train_device)
+
+        # Compute Gaussian score
+        show_only_gaussian = compute_gaussian(decoder=decoder,
+                                              input_size=input_size,
+                                              latent_size=latent_size,
+                                              test_dataset=test_dataset,
+                                              train_device=train_device)
+
+        print(f'Average BLEU-4 score from inference: {show_only_bleu:.2f}')
+        print(f'Gaussian score from inference: {show_only_gaussian:.2f}')
+
         with open('./model/highest.json', 'r') as f:
             highest = json.load(f)
         print(f'Max average BLEU-4 score: {highest["bleu"]:.2f}')
         print(f'Max Gaussian score: {highest["gaussian"]:.2f}')
+
         show_results(epochs=last_epoch, losses_and_scores=losses_and_scores)
 
 
