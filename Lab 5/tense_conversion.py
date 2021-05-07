@@ -298,6 +298,7 @@ def save_model_and_loss_and_score(stored_check_point, losses_and_scores, epoch: 
     Save model and losses and score
     :param stored_check_point: stored model check point
     :param losses_and_scores: cross entropy loss, KL loss, BLEU-4 score and Gaussian score
+    :param epoch: current epoch
     :return: None
     """
     if not os.path.exists('./model'):
@@ -625,7 +626,7 @@ def cyclical_kl_annealing(epoch: int) -> float:
     if epoch < 50:
         return 0.0
 
-    weight = 0.0032 * ((epoch - 50) % 625)
+    weight = 0.02 * ((epoch - 50) % 100)
     if weight >= 1.0:
         return 1.0
     return weight
