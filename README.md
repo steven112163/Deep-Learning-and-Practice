@@ -11,3 +11,4 @@
 |Lab 2|Temporal Difference|
 |Lab 3|EEGNet & DeepConvNet|
 |Lab 4|ResNet|
+|Lab 5|CVAE with LSTM|
