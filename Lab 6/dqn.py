@@ -102,7 +102,7 @@ class DQN:
             self._behavior_net.train()
             return np.argmax(action_values.cpu().data.numpy())
         else:
-            return random.choice(np.arange(int(action_space)))
+            return random.choice(np.arange(action_space.n))
 
     def append(self, state, action, reward, next_state, done):
         """
