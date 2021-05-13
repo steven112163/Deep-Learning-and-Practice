@@ -295,7 +295,7 @@ def main():
     parser.add_argument('--eps_min', default=.01, type=float)
     parser.add_argument('--gamma', default=.99, type=float)
     parser.add_argument('--freq', default=4, type=int)
-    parser.add_argument('--target_freq', default=1000, type=int)
+    parser.add_argument('--target_freq', default=100, type=int)
     # Testing arguments
     parser.add_argument('--test_only', action='store_true')
     parser.add_argument('--render', action='store_true')
