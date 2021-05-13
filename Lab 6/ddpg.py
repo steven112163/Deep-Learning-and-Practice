@@ -123,7 +123,7 @@ class DDPG:
         # Memory
         self._memory = ReplayMemory(capacity=args.capacity)
 
-        # config
+        # Config
         self.device = args.device
         self.batch_size = args.batch_size
         self.tau = args.tau
@@ -206,7 +206,7 @@ class DDPG:
             q_next = target_critic_net(next_state, a_next)
             q_target = reward + (gamma * q_next * (1 - done))
         critic_loss = nn.MSELoss()(q_value, q_target)
-        # optimize critic
+        # Optimize critic
         actor_net.zero_grad()
         critic_net.zero_grad()
         critic_loss.backward()
@@ -219,7 +219,7 @@ class DDPG:
         # actor_loss = ?
         action = actor_net(state)
         actor_loss = -critic_net(state, action).mean()
-        # optimize actor
+        # Optimize actor
         actor_net.zero_grad()
         critic_net.zero_grad()
         actor_loss.backward()
@@ -239,6 +239,12 @@ class DDPG:
             target.data.copy_(tau * behavior.data + (1.0 - tau) * target.data)
 
     def save(self, model_path, checkpoint=False):
+        """
+        Save behavior networks (and target networks and optimizers) into model_path
+        :param model_path: name of the stored model
+        :param checkpoint: whether to store target networks and optimizers
+        :return: None
+        """
         if checkpoint:
             torch.save(
                 {
@@ -257,6 +263,12 @@ class DDPG:
                 }, model_path)
 
     def load(self, model_path, checkpoint=False):
+        """
+        Load behavior networks (and target networks and optimizers) from model_path
+        :param model_path: name of the stored model
+        :param checkpoint: whether target networks and optimizers are stored in the model path
+        :return: None
+        """
         model = torch.load(model_path)
         self._actor_net.load_state_dict(model['actor'])
         self._critic_net.load_state_dict(model['critic'])

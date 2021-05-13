@@ -26,7 +26,11 @@ class ReplayMemory:
         return len(self.buffer)
 
     def append(self, *transition):
-        # (state, action, reward, next_state, done)
+        """
+        Append (state, action, reward, next_state, done) to the buffer
+        :param transition: (state, action, reward, next_state, done)
+        :return: None
+        """
         self.buffer.append(tuple(map(tuple, transition)))
 
     def sample(self, batch_size, device):
@@ -63,15 +67,18 @@ class DQN:
     def __init__(self, args):
         self._behavior_net = Net().to(args.device)
         self._target_net = Net().to(args.device)
-        # initialize target network
+
+        # Initialize target network
         self._target_net.load_state_dict(self._behavior_net.state_dict())
+
         # TODO
         # self._optimizer = ?
         self._optimizer = Adam(self._behavior_net.parameters(), lr=args.lr)
-        # memory
+
+        # Memory
         self._memory = ReplayMemory(capacity=args.capacity)
 
-        # config
+        # Config
         self.device = args.device
         self.batch_size = args.batch_size
         self.gamma = args.gamma
@@ -98,17 +105,35 @@ class DQN:
             return random.choice(np.arange(action_space))
 
     def append(self, state, action, reward, next_state, done):
+        """
+        Append a step to the memory
+        :param state: current state
+        :param action: best action
+        :param reward: reward
+        :param next_state: next state
+        :param done: whether the game is finished
+        :return: None
+        """
         self._memory.append(state, [action], [reward / 10], next_state,
                             [int(done)])
 
     def update(self, total_steps):
+        """
+        Update behavior networks and target networks
+        :return: None
+        """
         if total_steps % self.freq == 0:
             self._update_behavior_network(self.gamma)
         if total_steps % self.target_freq == 0:
             self._update_target_network()
 
     def _update_behavior_network(self, gamma):
-        # sample a mini-batch of transitions
+        """
+        Update behavior network
+        :param gamma: gamma
+        :return: None
+        """
+        # Sample a mini-batch of transitions
         state, action, reward, next_state, done = self._memory.sample(
             self.batch_size, self.device)
 
@@ -125,7 +150,7 @@ class DQN:
             q_target = reward + (gamma * q_next * (1 - done))
         loss = nn.MSELoss()(q_value, q_target)
 
-        # optimize
+        # Optimize
         self._optimizer.zero_grad()
         loss.backward()
         nn.utils.clip_grad_norm_(self._behavior_net.parameters(), 5)
@@ -133,13 +158,19 @@ class DQN:
 
     def _update_target_network(self):
         """
-        update target network by copying from behavior network
+        Update target network by copying from behavior network
         :return: None
         """
         # TODO
         self._target_net.load_state_dict(self._behavior_net.state_dict())
 
     def save(self, model_path, checkpoint=False):
+        """
+        Save behavior networks (and target networks and optimizers) into model_path
+        :param model_path: name of the stored model
+        :param checkpoint: whether to store target networks and optimizers
+        :return: None
+        """
         if checkpoint:
             torch.save(
                 {
@@ -153,6 +184,12 @@ class DQN:
             }, model_path)
 
     def load(self, model_path, checkpoint=False):
+        """
+        Load behavior networks (and target networks and optimizers) from model_path
+        :param model_path: name of the stored model
+        :param checkpoint: whether target networks and optimizers are stored in the model path
+        :return: None
+        """
         model = torch.load(model_path)
         self._behavior_net.load_state_dict(model['behavior_net'])
         if checkpoint:
@@ -161,6 +198,14 @@ class DQN:
 
 
 def train(args, env, agent, writer):
+    """
+    Training
+    :param args: arguments
+    :param env: environment
+    :param agent: agent
+    :param writer: Tensorboard writer
+    :return: None
+    """
     print('Start Training')
     action_space = env.action_space
     total_steps, epsilon = 0, 1.
@@ -169,15 +214,15 @@ def train(args, env, agent, writer):
         total_reward = 0
         state = env.reset()
         for t in itertools.count(start=1):
-            # select action
+            # Select action
             if total_steps < args.warmup:
                 action = action_space.sample()
             else:
                 action = agent.select_action(state, epsilon, action_space)
                 epsilon = max(epsilon * args.eps_decay, args.eps_min)
-            # execute action
+            # Execute action
             next_state, reward, done, _ = env.step(action)
-            # store transition
+            # Store transition
             agent.append(state, action, reward, next_state, done)
             if total_steps >= args.warmup:
                 agent.update(total_steps)
@@ -200,6 +245,14 @@ def train(args, env, agent, writer):
 
 
 def test(args, env, agent, writer):
+    """
+    Testing
+    :param args: arguments
+    :param env: environment
+    :param agent: agent
+    :param writer: Tensorboard writer
+    :return: None
+    """
     print('Start Testing')
     action_space = env.action_space
     epsilon = args.test_epsilon
