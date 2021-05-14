@@ -137,17 +137,25 @@ class DQN:
         state, action, reward, next_state, done = self._memory.sample(
             self.batch_size, self.device)
 
-        # TODO
+        # TODO DQN
         # q_value = ?
         # with torch.no_grad():
         #    q_next = ?
         #    q_target = ?
         # criterion = ?
         # loss = criterion(q_value, q_target)
+        # q_value = self._behavior_net(state).gather(1, action.long())
+        # with torch.no_grad():
+        #     q_next = self._target_net(next_state).detach().max(1)[0].unsqueeze(1)
+        #     q_target = reward + (gamma * q_next * (1 - done))
+
+        # TODO DDQN
         q_value = self._behavior_net(state).gather(1, action.long())
         with torch.no_grad():
-            q_next = self._target_net(next_state).detach().max(1)[0].unsqueeze(1)
+            q_argmax = self._behavior_net(next_state).detach().max(1)[1].unsqueeze(1)
+            q_next = self._target_net(next_state).detach().gather(1, q_argmax)
             q_target = reward + (gamma * q_next * (1 - done))
+
         loss = nn.MSELoss()(q_value, q_target)
 
         # Optimize
