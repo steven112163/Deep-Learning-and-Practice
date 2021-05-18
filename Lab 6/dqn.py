@@ -164,18 +164,6 @@ class DQN:
         nn.utils.clip_grad_norm_(self._behavior_net.parameters(), 5)
         self._optimizer.step()
 
-        # TODO DDQN
-        self._soft_update_target_network()
-
-    def _soft_update_target_network(self, tau=.005):
-        """
-        Update target network by _soft_ copying from behavior network
-        :param tau: weight
-        :return: None
-        """
-        for target, behavior in zip(self._target_net.parameters(), self._behavior_net.parameters()):
-            target.data.copy_(tau * behavior.data + (1.0 - tau) * target.data)
-
     def _update_target_network(self):
         """
         Update target network by copying from behavior network
