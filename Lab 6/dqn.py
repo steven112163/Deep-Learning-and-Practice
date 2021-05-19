@@ -93,24 +93,16 @@ class DQN:
         :param action_space: action space of current game
         :return: an action
         """
-        # TODO DQN
-        # if random.random() > epsilon:
-        #     state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
-        #     self._behavior_net.eval()
-        #     with torch.no_grad():
-        #         action_values = self._behavior_net(state)
-        #     self._behavior_net.train()
-        #     return np.argmax(action_values.cpu().data.numpy())
-        # else:
-        #     return random.choice(np.arange(action_space.n))
-
-        # TODO DDQN
-        state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
-        self._behavior_net.eval()
-        with torch.no_grad():
-            action_values = self._behavior_net(state)
-        self._behavior_net.train()
-        return np.argmax(action_values.cpu().data.numpy())
+        # TODO
+        if random.random() > epsilon:
+            state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
+            self._behavior_net.eval()
+            with torch.no_grad():
+                action_values = self._behavior_net(state)
+            self._behavior_net.train()
+            return np.argmax(action_values.cpu().data.numpy())
+        else:
+            return random.choice(np.arange(action_space.n))
 
     def append(self, state, action, reward, next_state, done):
         """
@@ -133,7 +125,10 @@ class DQN:
         if total_steps % self.freq == 0:
             self._update_behavior_network(self.gamma)
         if total_steps % self.target_freq == 0:
-            self._update_target_network()
+            # TODO DQN
+            # self._update_target_network()
+            # TODO DDQN
+            self._soft_update_target_network()
 
     def _update_behavior_network(self, gamma):
         """
@@ -179,6 +174,15 @@ class DQN:
         """
         # TODO
         self._target_net.load_state_dict(self._behavior_net.state_dict())
+
+    def _soft_update_target_network(self, tau=.005):
+        """
+        Update target network by _soft_ copying from behavior network
+        :param tau: weight
+        :return: None
+        """
+        for target, behavior in zip(self._target_net.parameters(), self._behavior_net.parameters()):
+            target.data.copy_(tau * behavior.data + (1.0 - tau) * target.data)
 
     def save(self, model_path, checkpoint=False):
         """
