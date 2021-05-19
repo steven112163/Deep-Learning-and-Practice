@@ -128,7 +128,7 @@ class DQN:
             # TODO DQN
             # self._update_target_network()
             # TODO DDQN
-            self._soft_update_target_network()
+            self._update_target_network()
 
     def _update_behavior_network(self, gamma):
         """
