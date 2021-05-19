@@ -175,7 +175,7 @@ class DQN:
         # TODO
         self._target_net.load_state_dict(self._behavior_net.state_dict())
 
-    def _soft_update_target_network(self, tau=.25):
+    def _soft_update_target_network(self, tau=.9):
         """
         Update target network by _soft_ copying from behavior network
         :param tau: weight
