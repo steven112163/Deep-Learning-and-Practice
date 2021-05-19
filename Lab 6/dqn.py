@@ -93,16 +93,24 @@ class DQN:
         :param action_space: action space of current game
         :return: an action
         """
-        # TODO
-        if random.random() > epsilon:
-            state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
-            self._behavior_net.eval()
-            with torch.no_grad():
-                action_values = self._behavior_net(state)
-            self._behavior_net.train()
-            return np.argmax(action_values.cpu().data.numpy())
-        else:
-            return random.choice(np.arange(action_space.n))
+        # TODO DQN
+        # if random.random() > epsilon:
+        #     state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
+        #     self._behavior_net.eval()
+        #     with torch.no_grad():
+        #         action_values = self._behavior_net(state)
+        #     self._behavior_net.train()
+        #     return np.argmax(action_values.cpu().data.numpy())
+        # else:
+        #     return random.choice(np.arange(action_space.n))
+
+        # TODO DDQN
+        state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
+        self._behavior_net.eval()
+        with torch.no_grad():
+            action_values = self._behavior_net(state)
+        self._behavior_net.train()
+        return np.argmax(action_values.cpu().data.numpy())
 
     def append(self, state, action, reward, next_state, done):
         """
