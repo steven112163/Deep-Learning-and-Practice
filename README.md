@@ -12,3 +12,4 @@
 |Lab 3|EEGNet & DeepConvNet|
 |Lab 4|ResNet|
 |Lab 5|CVAE with LSTM|
+|Lab 6|DQN & DDPG|
