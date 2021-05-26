@@ -2,6 +2,7 @@ from model import Generator, Discriminator
 from data_loader import ICLEVRLoader
 from evaluator import EvaluationModel
 from argument_parser import parse_arguments
+from visualizer import plot_losses, plot_accuracies
 from torch.utils.data import DataLoader
 from torchvision.transforms import transforms
 from torchvision.utils import save_image, make_grid
@@ -286,6 +287,11 @@ def main() -> None:
         if epoch % 10 == 0:
             torch.save(generator, f'./model/{epoch}_{accuracies[epoch]:.4f}_g.pt')
             torch.save(discriminator, f'./model/{epoch}_{accuracies[epoch]:.4f}_d.pt')
+
+    # Plot losses and accuracies
+    info_log('Plot losses and accuracies ...')
+    plot_losses(generator_losses=generator_losses, discriminator_losses=discriminator_losses)
+    plot_accuracies(accuracies=accuracies)
 
 
 if __name__ == '__main__':
