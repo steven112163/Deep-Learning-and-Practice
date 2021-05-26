@@ -131,9 +131,10 @@ class Discriminator(nn.Module):
             nn.Sigmoid()
         )
 
-        self.label_to_condition = nn.Linear(24, image_size, bias=True)
+        self.label_to_condition = nn.Linear(24, image_size * image_size, bias=True)
+        self.image_size = image_size
 
     def forward(self, x, label):
-        condition = self.label_to_condition(label).view(-1, 1, 64, 64)
+        condition = self.label_to_condition(label).view(-1, 1, self.image_size, self.image_size)
         x = torch.cat([x, condition], 1)
         return self.net(x).view(-1, 1)

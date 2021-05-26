@@ -53,7 +53,7 @@ class ICLEVRLoader(data.Dataset):
         self.mode = mode
         self.img_list, self.label_list = get_iclevr_data(root_folder, mode)
         if self.mode == 'train':
-            print("> Found %d images..." % (len(self.img_list)))
+            print(f'> Found {len(self.img_list)} images...')
 
         self.transform = trans
         self.cond = cond
