@@ -10,6 +10,7 @@ from typing import Tuple
 import torch.optim as optim
 import torch.nn as nn
 import sys
+import os
 import torch
 
 
@@ -242,6 +243,14 @@ def main() -> None:
     # Setup evaluator
     evaluator = EvaluationModel()
 
+    # Create directories
+    if not os.path.exists('./model'):
+        os.mkdir('./model')
+    if not os.path.exists('./test_figure'):
+        os.mkdir('./test_figure')
+    if not os.path.exists('./figure'):
+        os.mkdir('./figure')
+
     # Start training
     info_log('Start training')
     for epoch in range(epochs):
@@ -271,8 +280,12 @@ def main() -> None:
                                                evaluator=evaluator,
                                                training_device=training_device)
         accuracies[epoch] = total_accuracy / len(test_loader)
-        save_image(make_grid(generated_image, nrow=8), f'./figure/{epoch}.jpg')
-        print(f'[{epoch}/{epochs}]\tAverage accuracy: {accuracies[epoch]}')
+        save_image(make_grid(generated_image, nrow=8), f'./test_figure/{epoch}.jpg')
+        print(f'[{epoch}/{epochs}]\tAverage accuracy: {accuracies[epoch]:.2f}')
+
+        if epoch % 10 == 0:
+            torch.save(generator, f'./model/{epoch}_{accuracies[epoch]:.4f}_g.pt')
+            torch.save(discriminator, f'./model/{epoch}_{accuracies[epoch]:.4f}_d.pt')
 
 
 if __name__ == '__main__':

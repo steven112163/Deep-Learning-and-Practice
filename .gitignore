@@ -7,3 +7,7 @@ results
 model
 Lab 6/log
 Lab 6/*.pth
+Lab 7/data
+Lab 7/figure
+Lab 7/test_figure
+Lab 7/model
