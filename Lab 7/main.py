@@ -8,6 +8,7 @@ from torchvision.transforms import transforms
 from torchvision.utils import save_image, make_grid
 from torch import device, cuda
 from typing import Tuple
+import matplotlib.pyplot as plt
 import torch.optim as optim
 import torch.nn as nn
 import sys
@@ -296,6 +297,7 @@ def main() -> None:
     info_log('Plot losses and accuracies ...')
     plot_losses(generator_losses=generator_losses, discriminator_losses=discriminator_losses)
     plot_accuracies(accuracies=accuracies)
+    plt.close()
 
 
 if __name__ == '__main__':

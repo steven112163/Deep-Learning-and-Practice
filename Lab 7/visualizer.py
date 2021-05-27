@@ -9,6 +9,7 @@ def plot_losses(generator_losses: List[float], discriminator_losses: List[float]
     :param discriminator_losses: discriminator losses
     :return: None
     """
+    plt.figure(0)
     plt.title('Loss')
     plt.xlabel('epoch')
     plt.ylabel('loss')
@@ -17,7 +18,6 @@ def plot_losses(generator_losses: List[float], discriminator_losses: List[float]
     plt.legend()
     plt.tight_layout()
     plt.savefig(f'./figure/loss.png')
-    plt.close()
 
 
 def plot_accuracies(accuracies: List[float]) -> None:
@@ -26,6 +26,7 @@ def plot_accuracies(accuracies: List[float]) -> None:
     :param accuracies: accuracies
     :return: None
     """
+    plt.figure(1)
     plt.title('Accuracy')
     plt.xlabel('epoch')
     plt.ylabel('accuracy')
@@ -33,4 +34,3 @@ def plot_accuracies(accuracies: List[float]) -> None:
     plt.legend()
     plt.tight_layout()
     plt.savefig(f'./figure/accuracy.png')
-    plt.close()
