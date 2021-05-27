@@ -165,12 +165,13 @@ def test(data_loader: DataLoader,
     norm_image = torch.randn(0, 3, 64, 64)
     for batch_idx, batch_data in enumerate(data_loader):
         labels = batch_data
+        labels.to(training_device)
         batch_size = len(labels)
 
         # Generate batch of latent vectors
         noise = torch.cat([
-            torch.randn(batch_size, image_size - num_classes, 1, 1, device=training_device),
-            labels
+            torch.randn(batch_size, image_size - num_classes),
+            labels.cpu()
         ], 1).view(-1, image_size, 1, 1).to(training_device)
 
         # Generate fake image batch with generator
