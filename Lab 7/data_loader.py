@@ -73,7 +73,7 @@ class ICLEVRLoader(data.Dataset):
         :return: data
         """
         if self.mode == 'train':
-            img_path = self.root_folder + self.img_list[index]
+            img_path = self.root_folder + 'images/' + self.img_list[index]
             label = self.label_list[index]
             image = Image.open(img_path).convert('RGB')
             image = self.transform(image)

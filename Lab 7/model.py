@@ -44,27 +44,9 @@ class Generator(nn.Module):
             nn.ReLU(True),
 
             nn.ConvTranspose2d(in_channels=64,
-                               out_channels=32,
+                               out_channels=3,
                                kernel_size=4,
                                stride=2,
-                               padding=1,
-                               bias=False),
-            nn.BatchNorm2d(num_features=32),
-            nn.ReLU(True),
-
-            nn.ConvTranspose2d(in_channels=32,
-                               out_channels=16,
-                               kernel_size=5,
-                               stride=2,
-                               padding=1,
-                               bias=False),
-            nn.BatchNorm2d(num_features=16),
-            nn.ReLU(True),
-
-            nn.ConvTranspose2d(in_channels=16,
-                               out_channels=3,
-                               kernel_size=1,
-                               stride=1,
                                padding=1,
                                bias=False),
             nn.Tanh()
@@ -80,19 +62,11 @@ class Discriminator(nn.Module):
 
         self.net = nn.Sequential(
             nn.Conv2d(in_channels=4,
-                      out_channels=32,
-                      kernel_size=4,
-                      stride=2,
-                      padding=1, bias=False),
-            nn.LeakyReLU(negative_slope=0.2, inplace=True),
-
-            nn.Conv2d(in_channels=32,
                       out_channels=64,
                       kernel_size=4,
                       stride=2,
                       padding=1,
                       bias=False),
-            nn.BatchNorm2d(num_features=64),
             nn.LeakyReLU(negative_slope=0.2, inplace=True),
 
             nn.Conv2d(in_channels=64,
@@ -136,5 +110,5 @@ class Discriminator(nn.Module):
 
     def forward(self, x, label):
         condition = self.label_to_condition(label).view(-1, 1, self.image_size, self.image_size)
-        x = torch.cat([x, condition], 1)
-        return self.net(x).view(-1, 1)
+        inputs = torch.cat([x, condition], 1)
+        return self.net(inputs).view(-1, 1)

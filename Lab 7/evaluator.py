@@ -1,3 +1,4 @@
+from torch import device
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -32,15 +33,15 @@ e.g. [[1,1,0,...,0],[0,1,1,0,...],...]
 
 
 class EvaluationModel:
-    def __init__(self):
-        checkpoint = torch.load('logs/classifier/checkpoint.pth')
+    def __init__(self, training_device: device):
+        checkpoint = torch.load('data/task_1/classifier_weight.pth', map_location=training_device)
         self.resnet18 = models.resnet18(pretrained=False)
         self.resnet18.fc = nn.Sequential(
             nn.Linear(512, 24),
             nn.Sigmoid()
         )
         self.resnet18.load_state_dict(checkpoint['model'])
-        self.resnet18 = self.resnet18.cuda()
+        self.resnet18 = self.resnet18.to(training_device)
         self.resnet18.eval()
         self.class_num = 24
 

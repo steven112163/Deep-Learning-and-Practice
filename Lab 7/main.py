@@ -68,7 +68,8 @@ def train(data_loader: DataLoader,
     total_g_loss = 0.0
     total_d_loss = 0.0
     for batch_idx, batch_data in enumerate(data_loader):
-        images, labels = batch_data
+        images, real_labels = batch_data
+        real_labels = real_labels.to(training_device).type(torch.float)
 
         ############################
         # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
@@ -79,10 +80,10 @@ def train(data_loader: DataLoader,
         # Format batch
         images = images.to(training_device)
         batch_size = images.size(0)
-        labels = torch.full((batch_size, 1), labels, dtype=torch.float, device=training_device)
+        labels = torch.full((batch_size, 1), 1.0, dtype=torch.float, device=training_device)
 
         # Forward pass real batch through discriminator
-        outputs = discriminator.forward(images, labels)
+        outputs = discriminator.forward(images, real_labels)
         d_x = outputs.mean().item()
 
         # Calculate loss on all-real batch
@@ -92,15 +93,16 @@ def train(data_loader: DataLoader,
         # Train with all-fake batch
         # Generate batch of latent vectors
         noise = torch.cat([
-            torch.randn(batch_size, image_size - num_classes, 1, 1, device=training_device),
-            labels.cpu()
+            torch.randn(batch_size, image_size - num_classes),
+            real_labels.cpu()
         ], 1).view(-1, image_size, 1, 1).to(training_device)
+        labels = torch.full((batch_size, 1), 0.0, dtype=torch.float, device=training_device)
 
         # Generate fake image batch with generator
         fake_outputs = generator.forward(noise)
 
         # Forward pass fake batch through discriminator
-        outputs = discriminator.forward(fake_outputs.detach(), labels)
+        outputs = discriminator.forward(fake_outputs.detach(), real_labels)
         d_g_z1 = outputs.mean().item()
 
         # Calculate loss on fake batch
@@ -118,11 +120,12 @@ def train(data_loader: DataLoader,
         generator.zero_grad()
 
         # Since we just updated discriminator, perform another forward pass of all-fake batch through discriminator
-        outputs = discriminator.forward(fake_outputs, labels)
+        outputs = discriminator.forward(fake_outputs, real_labels)
         d_g_z2 = outputs.mean().item()
+        labels = torch.full((batch_size, 1), 1.0, dtype=torch.float, device=training_device)
 
         # Calculate generator's loss based on this output
-        loss_g = nn.BCELoss(outputs, labels)
+        loss_g = nn.BCELoss()(outputs, labels)
         total_g_loss += loss_g.item()
 
         # Calculate gradients for generator and update
@@ -132,7 +135,7 @@ def train(data_loader: DataLoader,
         if batch_idx % 50 == 0:
             output_string = f'[{epoch}/{num_of_epochs}][{batch_idx}/{len(data_loader)}]\t' + \
                             f'Loss_D: {loss_d.item():.4f}\tLoss_G: {loss_g.item():.4f}\t' + \
-                            f'D(x): {d_x:.4f}\tD(G(z)): {d_g_z1:.f4} / {d_g_z2:.4f}'
+                            f'D(x): {d_x:.4f}\tD(G(z)): {d_g_z1:.4f} / {d_g_z2:.4f}'
             debug_log(output_string)
 
     return total_g_loss, total_d_loss
@@ -159,6 +162,7 @@ def test(data_loader: DataLoader,
     """
     generator.eval()
     total_accuracy = 0.0
+    norm_image = torch.randn(0, 3, 64, 64)
     for batch_idx, batch_data in enumerate(data_loader):
         labels = batch_data
         batch_size = len(labels)
@@ -182,7 +186,6 @@ def test(data_loader: DataLoader,
                                              transforms.Normalize(mean=[-0.5, -0.5, -0.5],
                                                                   std=[1., 1., 1.]),
                                              ])
-        norm_image = torch.randn(0, 3, 64, 64)
         for fake_image in fake_outputs:
             n_image = transformation(fake_image.cpu().detach())
             norm_image = torch.cat([norm_image, n_image.view(1, 3, 64, 64)], 0)
@@ -223,8 +226,8 @@ def main() -> None:
                                          transforms.Resize((image_size, image_size)),
                                          transforms.ToTensor(),
                                          transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-    train_dataset = ICLEVRLoader(root_folder='./data/', trans=transformation, mode='train')
-    test_dataset = ICLEVRLoader(root_folder='./data/', mode='test')
+    train_dataset = ICLEVRLoader(root_folder='data/task_1/', trans=transformation, mode='train')
+    test_dataset = ICLEVRLoader(root_folder='data/task_1/', mode='test')
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
     num_classes = train_dataset.num_classes
@@ -242,7 +245,7 @@ def main() -> None:
     accuracies = [0.0 for _ in range(epochs)]
 
     # Setup evaluator
-    evaluator = EvaluationModel()
+    evaluator = EvaluationModel(training_device=training_device)
 
     # Create directories
     if not os.path.exists('./model'):
@@ -281,12 +284,12 @@ def main() -> None:
                                                evaluator=evaluator,
                                                training_device=training_device)
         accuracies[epoch] = total_accuracy / len(test_loader)
-        save_image(make_grid(generated_image, nrow=8), f'./test_figure/{epoch}.jpg')
+        save_image(make_grid(generated_image, nrow=8), f'test_figure/{epoch}.jpg')
         print(f'[{epoch}/{epochs}]\tAverage accuracy: {accuracies[epoch]:.2f}')
 
         if epoch % 10 == 0:
-            torch.save(generator, f'./model/{epoch}_{accuracies[epoch]:.4f}_g.pt')
-            torch.save(discriminator, f'./model/{epoch}_{accuracies[epoch]:.4f}_d.pt')
+            torch.save(generator, f'model/{epoch}_{accuracies[epoch]:.4f}_g.pt')
+            torch.save(discriminator, f'model/{epoch}_{accuracies[epoch]:.4f}_d.pt')
 
     # Plot losses and accuracies
     info_log('Plot losses and accuracies ...')
