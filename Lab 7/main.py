@@ -134,9 +134,9 @@ def train(data_loader: DataLoader,
         optimizer_g.step()
 
         if batch_idx % 50 == 0:
-            output_string = f'[{epoch + 1}/{num_of_epochs}][{batch_idx + 1}/{len(data_loader)}]\t' + \
-                            f'Loss_D: {loss_d.item():.4f}\tLoss_G: {loss_g.item():.4f}\t' + \
-                            f'D(x): {d_x:.4f}\tD(G(z)): {d_g_z1:.4f} / {d_g_z2:.4f}'
+            output_string = f'[{epoch + 1}/{num_of_epochs}][{batch_idx + 1}/{len(data_loader)}]   ' + \
+                            f'Loss_D: {loss_d.item():.4f}   Loss_G: {loss_g.item():.4f}   ' + \
+                            f'D(x): {d_x:.4f}   D(G(z)): {d_g_z1:.4f} / {d_g_z2:.4f}'
             debug_log(output_string)
 
     return total_g_loss, total_d_loss
@@ -192,7 +192,7 @@ def test(data_loader: DataLoader,
             n_image = transformation(fake_image.cpu().detach())
             norm_image = torch.cat([norm_image, n_image.view(1, 3, 64, 64)], 0)
 
-        debug_log(f'[{epoch + 1}/{num_of_epochs}][{batch_idx + 1}/{len(data_loader)}]\tAccuracy: {acc}')
+        debug_log(f'[{epoch + 1}/{num_of_epochs}][{batch_idx + 1}/{len(data_loader)}]   Accuracy: {acc}')
 
     return norm_image, total_accuracy
 
@@ -273,8 +273,8 @@ def main() -> None:
                                            training_device=training_device)
         generator_losses[epoch] = total_g_loss / len(train_dataset)
         discriminator_losses[epoch] = total_d_loss / len(train_dataset)
-        print(f'[{epoch + 1}/{epochs}]\tAverage generator loss: {generator_losses[epoch]}')
-        print(f'[{epoch + 1}/{epochs}]\tAverage discriminator loss: {discriminator_losses[epoch]}')
+        print(f'[{epoch + 1}/{epochs}] Average generator loss: {generator_losses[epoch]}')
+        print(f'[{epoch + 1}/{epochs}] Average discriminator loss: {discriminator_losses[epoch]}')
 
         # Test
         generated_image, total_accuracy = test(data_loader=test_loader,
@@ -287,7 +287,7 @@ def main() -> None:
                                                training_device=training_device)
         accuracies[epoch] = total_accuracy / len(test_loader)
         save_image(make_grid(generated_image, nrow=8), f'test_figure/{epoch}.jpg')
-        print(f'[{epoch + 1}/{epochs}]\tAverage accuracy: {accuracies[epoch]:.2f}')
+        print(f'[{epoch + 1}/{epochs}] Average accuracy: {accuracies[epoch]:.2f}')
 
         if epoch % 10 == 0:
             torch.save(generator, f'model/{epoch}_{accuracies[epoch]:.4f}_g.pt')
