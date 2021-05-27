@@ -64,7 +64,7 @@ class ICLEVRLoader(data.Dataset):
         Return the size of dataset
         :return: size of dataset
         """
-        return len(self.img_list)
+        return len(self.label_list)
 
     def __getitem__(self, index: int):
         """
