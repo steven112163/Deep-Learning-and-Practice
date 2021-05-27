@@ -165,7 +165,7 @@ def test(data_loader: DataLoader,
     norm_image = torch.randn(0, 3, 64, 64)
     for batch_idx, batch_data in enumerate(data_loader):
         labels = batch_data
-        labels.to(training_device)
+        labels = labels.to(training_device).type(torch.float)
         batch_size = len(labels)
 
         # Generate batch of latent vectors
@@ -260,20 +260,20 @@ def main() -> None:
     info_log('Start training')
     for epoch in range(epochs):
         # Train
-        total_g_loss, total_d_loss = train(data_loader=train_loader,
-                                           generator=generator,
-                                           discriminator=discriminator,
-                                           optimizer_g=optimizer_g,
-                                           optimizer_d=optimizer_d,
-                                           image_size=image_size,
-                                           num_classes=num_classes,
-                                           epoch=epoch,
-                                           num_of_epochs=epochs,
-                                           training_device=training_device)
-        generator_losses[epoch] = total_g_loss / len(train_dataset)
-        discriminator_losses[epoch] = total_d_loss / len(train_dataset)
-        print(f'[{epoch}/{epochs}]\tAverage generator loss: {generator_losses[epoch]}')
-        print(f'[{epoch}/{epochs}]\tAverage discriminator loss: {discriminator_losses[epoch]}')
+        # total_g_loss, total_d_loss = train(data_loader=train_loader,
+        #                                    generator=generator,
+        #                                    discriminator=discriminator,
+        #                                    optimizer_g=optimizer_g,
+        #                                    optimizer_d=optimizer_d,
+        #                                    image_size=image_size,
+        #                                    num_classes=num_classes,
+        #                                    epoch=epoch,
+        #                                    num_of_epochs=epochs,
+        #                                    training_device=training_device)
+        # generator_losses[epoch] = total_g_loss / len(train_dataset)
+        # discriminator_losses[epoch] = total_d_loss / len(train_dataset)
+        # print(f'[{epoch}/{epochs}]\tAverage generator loss: {generator_losses[epoch]}')
+        # print(f'[{epoch}/{epochs}]\tAverage discriminator loss: {discriminator_losses[epoch]}')
 
         # Test
         generated_image, total_accuracy = test(data_loader=test_loader,
