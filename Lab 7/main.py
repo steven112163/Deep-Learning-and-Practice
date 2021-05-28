@@ -329,6 +329,7 @@ def train_glow(data_loader: DataLoader,
     total_loss = 0.0
     for batch_idx, batch_data in enumerate(data_loader):
         images, labels = batch_data
+        images = images.to(training_device)
         labels = labels.to(training_device).type(torch.float)
 
         glow.zero_grad()
