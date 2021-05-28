@@ -285,16 +285,30 @@ def train_and_evaluate_glow(train_dataset: ICLEVRLoader,
                             evaluator: EvaluationModel,
                             learning_rate_nf: float,
                             image_size: int,
-                            num_classes: int,
                             width: int,
                             depth: int,
                             num_levels: int,
                             grad_norm_clip: float,
                             epochs: int,
                             training_device: device) -> None:
-    """"""
+    """
+    Train and test Glow
+    :param train_dataset: training dataset
+    :param train_loader: training data loader
+    :param test_loader: testing data loader
+    :param evaluator: evaluator
+    :param learning_rate_nf: learning rate of normalizing flow
+    :param image_size: image size (noise size)
+    :param width: dimension of the hidden layers in normalizing flow
+    :param depth: depth of the normalizing flow
+    :param num_levels: number of levels in normalizing flow
+    :param grad_norm_clip: clip gradients during training
+    :param epochs: number of total epochs
+    :param training_device: training device
+    :return: None
+    """
     # Setup average losses/accuracies container
-    glow_losses = [0.0 for _ in range(epochs)]
+    losses = [0.0 for _ in range(epochs)]
     accuracies = [0.0 for _ in range(epochs)]
 
     # Setup models
@@ -306,15 +320,27 @@ def train_and_evaluate_glow(train_dataset: ICLEVRLoader,
     info_log('Start training')
     for epoch in range(epochs):
         # Train
-        train_glow(data_loader=train_loader,
-                   glow=glow,
-                   optimizer=optimizer,
-                   grad_norm_clip=grad_norm_clip,
-                   epoch=epoch,
-                   num_of_epochs=epochs,
-                   training_device=training_device)
+        # total_loss = train_glow(data_loader=train_loader,
+        #                         glow=glow,
+        #                         optimizer=optimizer,
+        #                         grad_norm_clip=grad_norm_clip,
+        #                         epoch=epoch,
+        #                         num_of_epochs=epochs,
+        #                         training_device=training_device)
+        # losses[epoch] = total_loss / len(train_dataset)
+        # print(f'[{epoch + 1}/{epochs}] Average loss: {losses[epoch]}')
+
         # Test
-        test_glow()
+        generated_image, total_accuracy = test_glow(data_loader=test_loader,
+                                                    glow=glow,
+                                                    image_size=image_size,
+                                                    epoch=epoch,
+                                                    num_of_epochs=epochs,
+                                                    evaluator=evaluator,
+                                                    training_device=training_device)
+        accuracies[epoch] = total_accuracy / len(test_loader)
+        save_image(make_grid(generated_image, nrow=8), f'test_figure/{epoch}.jpg')
+        print(f'[{epoch + 1}/{epochs}] Average accuracy: {accuracies[epoch]:.2f}')
 
 
 def train_glow(data_loader: DataLoader,
@@ -323,8 +349,18 @@ def train_glow(data_loader: DataLoader,
                grad_norm_clip: float,
                epoch: int,
                num_of_epochs: int,
-               training_device: device):
-    """"""
+               training_device: device) -> float:
+    """
+    Train Glow
+    :param data_loader: training data loader
+    :param glow: glow model
+    :param optimizer: glow optimizer
+    :param grad_norm_clip: clipping gradient
+    :param epoch: current epoch
+    :param num_of_epochs: number of total epochs
+    :param training_device: training device
+    :return: total loss
+    """
     glow.train()
     total_loss = 0.0
     for batch_idx, batch_data in enumerate(data_loader):
@@ -343,13 +379,61 @@ def train_glow(data_loader: DataLoader,
 
         optimizer.step()
 
-        if batch_idx < 10:
+        if batch_idx % 50 == 0:
             debug_log(f'[{epoch + 1}/{num_of_epochs}][{batch_idx + 1}/{len(data_loader)}]   Loss: {loss}')
 
+    return total_loss
 
-def test_glow():
-    """"""
-    # TODO
+
+def test_glow(data_loader: DataLoader,
+              glow: Glow,
+              image_size: int,
+              epoch: int,
+              num_of_epochs: int,
+              evaluator: EvaluationModel,
+              training_device: device) -> Tuple[torch.Tensor, float]:
+    """
+    Test Glow
+    :param data_loader: testing data loader
+    :param glow: glow model
+    :param image_size: image size (noise size)
+    :param epoch: current epoch
+    :param num_of_epochs: number of total epochs
+    :param evaluator: evaluator
+    :param training_device: training device
+    :return: generated images and total accuracy
+    """
+    glow.eval()
+    total_accuracy = 0.0
+    generated_image = torch.randn(0, 3, 64, 64)
+    for batch_idx, batch_data in enumerate(data_loader):
+        labels = batch_data
+        labels = labels.to(training_device).type(torch.float)
+        batch_size = len(labels)
+
+        sample, _ = glow.inverse(batch_size=batch_size)
+        log_prob = glow.log_prob(sample, labels, bits_per_pixel=True)
+        # sort by log_prob; flip high (left) to low (right)
+        fake_images = sample[log_prob.argsort().flip(0)].view(batch_size, 4, image_size, image_size)
+        fake_images = fake_images[:, :3, :, :]
+
+        acc = evaluator.eval(fake_images, labels)
+        total_accuracy += acc
+
+        # Generate images from fake images
+        transformation = transforms.Compose([transforms.Normalize(mean=[0., 0., 0.],
+                                                                  std=[1 / 0.5, 1 / 0.5, 1 / 0.5]),
+                                             transforms.Normalize(mean=[-0.5, -0.5, -0.5],
+                                                                  std=[1., 1., 1.]),
+                                             ])
+
+        for fake_image in fake_images:
+            n_image = transformation(fake_image.cpu().detach())
+            generated_image = torch.cat([generated_image, n_image.view(1, 3, 64, 64)], 0)
+
+        debug_log(f'[{epoch + 1}/{num_of_epochs}][{batch_idx + 1}/{len(data_loader)}]   Accuracy: {acc}')
+
+    return generated_image, total_accuracy
 
 
 def main() -> None:
@@ -434,7 +518,6 @@ def main() -> None:
                                     evaluator=evaluator,
                                     learning_rate_nf=learning_rate_nf,
                                     image_size=image_size,
-                                    num_classes=num_classes,
                                     width=width,
                                     depth=depth,
                                     num_levels=num_levels,
