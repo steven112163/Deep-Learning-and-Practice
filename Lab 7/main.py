@@ -1,5 +1,6 @@
-from model import Generator, Discriminator
-from data_loader import ICLEVRLoader
+from task_1_model import Generator, Discriminator
+from task_1_dataset import ICLEVRLoader
+from task_2_model import Glow
 from evaluator import EvaluationModel
 from argument_parser import parse_arguments
 from visualizer import plot_losses, plot_accuracies
@@ -40,18 +41,97 @@ def debug_log(log: str) -> None:
         sys.stdout.flush()
 
 
-def train(data_loader: DataLoader,
-          generator: Generator,
-          discriminator: Discriminator,
-          optimizer_g: optim,
-          optimizer_d: optim,
-          image_size: int,
-          num_classes: int,
-          epoch: int,
-          num_of_epochs: int,
-          training_device: device) -> Tuple[float, float]:
+def train_and_evaluate_dcgan(train_dataset: ICLEVRLoader,
+                             train_loader: DataLoader,
+                             test_loader: DataLoader,
+                             evaluator: EvaluationModel,
+                             learning_rate_g: float,
+                             learning_rate_d: float,
+                             image_size: int,
+                             num_classes: int,
+                             epochs: int,
+                             training_device: device) -> None:
     """
-    Train the model
+    Train and test DCGAN
+    :param train_dataset: training dataset
+    :param train_loader: training data loader
+    :param test_loader: testing data loader
+    :param evaluator: evaluator
+    :param learning_rate_g: learning rate of generator
+    :param learning_rate_d: learning rate of discriminator
+    :param image_size: image size (noise size)
+    :param num_classes: number of classes (object IDs)
+    :param epochs: number of epochs
+    :param training_device: training device
+    :return: None
+    """
+    # Setup models
+    info_log('Setup models ...')
+    generator = Generator(noise_size=image_size).to(training_device)
+    discriminator = Discriminator(image_size=image_size).to(training_device)
+    optimizer_g = optim.Adam(generator.parameters(), lr=learning_rate_g)
+    optimizer_d = optim.Adam(discriminator.parameters(), lr=learning_rate_d)
+
+    # Setup average losses/accuracies container
+    generator_losses = [0.0 for _ in range(epochs)]
+    discriminator_losses = [0.0 for _ in range(epochs)]
+    accuracies = [0.0 for _ in range(epochs)]
+
+    # Start training
+    info_log('Start training')
+    for epoch in range(epochs):
+        # Train
+        total_g_loss, total_d_loss = train_dcgan(data_loader=train_loader,
+                                                 generator=generator,
+                                                 discriminator=discriminator,
+                                                 optimizer_g=optimizer_g,
+                                                 optimizer_d=optimizer_d,
+                                                 image_size=image_size,
+                                                 num_classes=num_classes,
+                                                 epoch=epoch,
+                                                 num_of_epochs=epochs,
+                                                 training_device=training_device)
+        generator_losses[epoch] = total_g_loss / len(train_dataset)
+        discriminator_losses[epoch] = total_d_loss / len(train_dataset)
+        print(f'[{epoch + 1}/{epochs}] Average generator loss: {generator_losses[epoch]}')
+        print(f'[{epoch + 1}/{epochs}] Average discriminator loss: {discriminator_losses[epoch]}')
+
+        # Test
+        generated_image, total_accuracy = test_dcgan(data_loader=test_loader,
+                                                     generator=generator,
+                                                     image_size=image_size,
+                                                     num_classes=num_classes,
+                                                     epoch=epoch,
+                                                     num_of_epochs=epochs,
+                                                     evaluator=evaluator,
+                                                     training_device=training_device)
+        accuracies[epoch] = total_accuracy / len(test_loader)
+        save_image(make_grid(generated_image, nrow=8), f'test_figure/{epoch}.jpg')
+        print(f'[{epoch + 1}/{epochs}] Average accuracy: {accuracies[epoch]:.2f}')
+
+        if epoch % 10 == 0:
+            torch.save(generator, f'model/{epoch}_{accuracies[epoch]:.4f}_g.pt')
+            torch.save(discriminator, f'model/{epoch}_{accuracies[epoch]:.4f}_d.pt')
+
+    # Plot losses and accuracies
+    info_log('Plot losses and accuracies ...')
+    plot_losses(generator_losses=generator_losses, discriminator_losses=discriminator_losses)
+    plot_accuracies(accuracies=accuracies)
+    plt.close()
+
+
+def train_dcgan(data_loader: DataLoader,
+                generator: Generator,
+                discriminator: Discriminator,
+                optimizer_g: optim,
+                optimizer_d: optim,
+                image_size: int,
+                num_classes: int,
+                epoch: int,
+                num_of_epochs: int,
+                training_device: device) -> Tuple[float, float]:
+    """
+    Train the DCGAN
     :param data_loader: train data loader
     :param generator: generator
     :param discriminator: discriminator
@@ -88,6 +168,7 @@ def train(data_loader: DataLoader,
         d_x = outputs.mean().item()
 
         # Calculate loss on all-real batch
+        optimizer_d.zero_grad()
         loss_d_real = nn.BCELoss()(outputs, labels)
         loss_d_real.backward()
 
@@ -130,6 +211,7 @@ def train(data_loader: DataLoader,
         total_g_loss += loss_g.item()
 
         # Calculate gradients for generator and update
+        optimizer_g.zero_grad()
         loss_g.backward()
         optimizer_g.step()
 
@@ -142,14 +224,14 @@ def train(data_loader: DataLoader,
     return total_g_loss, total_d_loss
 
 
-def test(data_loader: DataLoader,
-         generator: Generator,
-         image_size: int,
-         num_classes: int,
-         epoch: int,
-         num_of_epochs: int,
-         evaluator: EvaluationModel,
-         training_device: device) -> Tuple[torch.Tensor, float]:
+def test_dcgan(data_loader: DataLoader,
+               generator: Generator,
+               image_size: int,
+               num_classes: int,
+               epoch: int,
+               num_of_epochs: int,
+               evaluator: EvaluationModel,
+               training_device: device) -> Tuple[torch.Tensor, float]:
     """
     Test the model
     :param data_loader: test data loader
@@ -197,6 +279,78 @@ def test(data_loader: DataLoader,
     return norm_image, total_accuracy
 
 
+def train_and_evaluate_glow(train_dataset: ICLEVRLoader,
+                            train_loader: DataLoader,
+                            test_loader: DataLoader,
+                            evaluator: EvaluationModel,
+                            learning_rate_nf: float,
+                            image_size: int,
+                            num_classes: int,
+                            width: int,
+                            depth: int,
+                            num_levels: int,
+                            grad_norm_clip: float,
+                            epochs: int,
+                            training_device: device) -> None:
+    """"""
+    # Setup average losses/accuracies container
+    glow_losses = [0.0 for _ in range(epochs)]
+    accuracies = [0.0 for _ in range(epochs)]
+
+    # Setup models
+    info_log('Setup models ...')
+    glow = Glow(width=width, depth=depth, n_levels=num_levels).to(training_device)
+    optimizer = optim.Adam(glow.parameters(), lr=learning_rate_nf)
+
+    # Start training
+    info_log('Start training')
+    for epoch in range(epochs):
+        # Train
+        train_glow(data_loader=train_loader,
+                   glow=glow,
+                   optimizer=optimizer,
+                   grad_norm_clip=grad_norm_clip,
+                   epoch=epoch,
+                   num_of_epochs=epochs,
+                   training_device=training_device)
+        # Test
+        test_glow()
+
+
+def train_glow(data_loader: DataLoader,
+               glow: Glow,
+               optimizer: optim,
+               grad_norm_clip: float,
+               epoch: int,
+               num_of_epochs: int,
+               training_device: device):
+    """"""
+    glow.train()
+    total_loss = 0.0
+    for batch_idx, batch_data in enumerate(data_loader):
+        images, labels = batch_data
+        labels = labels.to(training_device).type(torch.float)
+
+        glow.zero_grad()
+        loss = - glow.log_prob(images, labels, bits_per_pixel=True).mean(0)
+        total_loss += loss
+
+        optimizer.zero_grad()
+        loss.backward()
+
+        nn.utils.clip_grad_norm_(glow.parameters(), grad_norm_clip)
+
+        optimizer.step()
+
+        if batch_idx % 50 == 0:
+            debug_log(f'[{epoch + 1}/{num_of_epochs}][{batch_idx + 1}/{len(data_loader)}]   Loss: {loss}')
+
+
+def test_glow():
+    """"""
+    # TODO
+
+
 def main() -> None:
     """
     Main function
@@ -209,16 +363,30 @@ def main() -> None:
     args = parse_arguments()
     batch_size = args.batch_size
     image_size = args.image_size
+    width = args.width
+    depth = args.depth
+    num_levels = args.num_levels
+    grad_norm_clip = args.grad_norm_clip
     learning_rate_d = args.learning_rate_discriminator
     learning_rate_g = args.learning_rate_generator
+    learning_rate_nf = args.learning_rate_normalizing_flow
     epochs = args.epochs
+    task = args.task
+    model = args.model
     global verbosity
     verbosity = args.verbosity
     info_log(f'Batch size: {batch_size}')
     info_log(f'Image size: {image_size}')
+    info_log(f'Dimension of the hidden layers in normalizing flow: {width}')
+    info_log(f'Depth of the normalizing flow: {depth}')
+    info_log(f'Number of levels in normalizing flow: {num_levels}')
+    info_log(f'Clip gradients during training: {grad_norm_clip}')
     info_log(f'Learning rate of discriminator: {learning_rate_d}')
     info_log(f'Learning rate of generator: {learning_rate_g}')
+    info_log(f'Learning rate of normalizing flow: {learning_rate_nf}')
     info_log(f'Number of epochs: {epochs}')
+    info_log(f'Perform task: {task}')
+    info_log(f'Which model will be used: {model}')
     info_log(f'Training device: {training_device}')
 
     # Read data
@@ -228,23 +396,12 @@ def main() -> None:
                                          transforms.Resize((image_size, image_size)),
                                          transforms.ToTensor(),
                                          transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+    # TODO: control data for different task
     train_dataset = ICLEVRLoader(root_folder='data/task_1/', trans=transformation, mode='train')
     test_dataset = ICLEVRLoader(root_folder='data/task_1/', mode='test')
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
     num_classes = train_dataset.num_classes
-
-    # Setup models
-    info_log('Setup models ...')
-    generator = Generator(noise_size=image_size).to(training_device)
-    discriminator = Discriminator(image_size=image_size).to(training_device)
-    optimizer_g = optim.Adam(generator.parameters(), lr=learning_rate_g, betas=(0.5, 0.999))
-    optimizer_d = optim.Adam(discriminator.parameters(), lr=learning_rate_d, betas=(0.5, 0.999))
-
-    # Setup average losses/accuracies container
-    generator_losses = [0.0 for _ in range(epochs)]
-    discriminator_losses = [0.0 for _ in range(epochs)]
-    accuracies = [0.0 for _ in range(epochs)]
 
     # Setup evaluator
     evaluator = EvaluationModel(training_device=training_device)
@@ -257,47 +414,32 @@ def main() -> None:
     if not os.path.exists('./figure'):
         os.mkdir('./figure')
 
-    # Start training
-    info_log('Start training')
-    for epoch in range(epochs):
-        # Train
-        total_g_loss, total_d_loss = train(data_loader=train_loader,
-                                           generator=generator,
-                                           discriminator=discriminator,
-                                           optimizer_g=optimizer_g,
-                                           optimizer_d=optimizer_d,
-                                           image_size=image_size,
-                                           num_classes=num_classes,
-                                           epoch=epoch,
-                                           num_of_epochs=epochs,
-                                           training_device=training_device)
-        generator_losses[epoch] = total_g_loss / len(train_dataset)
-        discriminator_losses[epoch] = total_d_loss / len(train_dataset)
-        print(f'[{epoch + 1}/{epochs}] Average generator loss: {generator_losses[epoch]}')
-        print(f'[{epoch + 1}/{epochs}] Average discriminator loss: {discriminator_losses[epoch]}')
-
-        # Test
-        generated_image, total_accuracy = test(data_loader=test_loader,
-                                               generator=generator,
-                                               image_size=image_size,
-                                               num_classes=num_classes,
-                                               epoch=epoch,
-                                               num_of_epochs=epochs,
-                                               evaluator=evaluator,
-                                               training_device=training_device)
-        accuracies[epoch] = total_accuracy / len(test_loader)
-        save_image(make_grid(generated_image, nrow=8), f'test_figure/{epoch}.jpg')
-        print(f'[{epoch + 1}/{epochs}] Average accuracy: {accuracies[epoch]:.2f}')
-
-        if epoch % 10 == 0:
-            torch.save(generator, f'model/{epoch}_{accuracies[epoch]:.4f}_g.pt')
-            torch.save(discriminator, f'model/{epoch}_{accuracies[epoch]:.4f}_d.pt')
-
-    # Plot losses and accuracies
-    info_log('Plot losses and accuracies ...')
-    plot_losses(generator_losses=generator_losses, discriminator_losses=discriminator_losses)
-    plot_accuracies(accuracies=accuracies)
-    plt.close()
+    if task == 1:
+        if model == 'gan':
+            train_and_evaluate_dcgan(train_dataset=train_dataset,
+                                     train_loader=train_loader,
+                                     test_loader=test_loader,
+                                     evaluator=evaluator,
+                                     learning_rate_g=learning_rate_g,
+                                     learning_rate_d=learning_rate_d,
+                                     image_size=image_size,
+                                     num_classes=num_classes,
+                                     epochs=epochs,
+                                     training_device=training_device)
+        else:
+            train_and_evaluate_glow(train_dataset=train_dataset,
+                                    train_loader=train_loader,
+                                    test_loader=test_loader,
+                                    evaluator=evaluator,
+                                    learning_rate_nf=learning_rate_nf,
+                                    image_size=image_size,
+                                    num_classes=num_classes,
+                                    width=width,
+                                    depth=depth,
+                                    num_levels=num_levels,
+                                    grad_norm_clip=grad_norm_clip,
+                                    epochs=epochs,
+                                    training_device=training_device)
 
 
 if __name__ == '__main__':

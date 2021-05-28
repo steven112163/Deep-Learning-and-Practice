@@ -1,6 +1,29 @@
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
 
 
+def check_task_type(input_value: str) -> int:
+    """
+    Check whether task is true or false
+    :param input_value: input string value
+    :return: integer value
+    """
+    int_value = int(input_value)
+    if int_value != 1 and int_value != 2:
+        raise ArgumentTypeError(f'Verbosity should be 1 or 2.')
+    return int_value
+
+
+def check_model_type(input_value: str) -> str:
+    """
+    Check whether model is gan or nf
+    :param input_value: input string value
+    :return: string value
+    """
+    if input_value != 'gan' and input_value != 'nf':
+        raise ArgumentTypeError(f'Model should be "gan" or "nf"')
+    return input_value
+
+
 def check_verbosity_type(input_value: str) -> int:
     """
     Check whether verbosity is true or false
@@ -21,11 +44,20 @@ def parse_arguments() -> Namespace:
     parser = ArgumentParser(description='cGAN & cNF')
     parser.add_argument('-b', '--batch_size', default=32, type=int, help='Batch size')
     parser.add_argument('-i', '--image_size', default=64, type=int, help='Image size')
+    parser.add_argument('-w', '--width', default=512, type=int,
+                        help='Dimension of the hidden layers in normalizing flow')
+    parser.add_argument('-d', '--depth', default=32, type=int, help='Depth of the normalizing flow')
+    parser.add_argument('-n', '--num_levels', default=3, type=int, help='Number of levels in normalizing flow')
+    parser.add_argument('-g', '--grad_norm_clip', default=50, type=float, help='Clip gradients during training')
     parser.add_argument('-lrd', '--learning_rate_discriminator', default=0.0001, type=float,
                         help='Learning rate of discriminator')
     parser.add_argument('-lrg', '--learning_rate_generator', default=0.0001, type=float,
                         help='Learning rate of generator')
+    parser.add_argument('-lrnf', '--learning_rate_normalizing_flow', default=0.001, type=float,
+                        help='Learning rate of normalizing flow')
     parser.add_argument('-e', '--epochs', default=200, type=int, help='Number of epochs')
+    parser.add_argument('-t', '--task', default=1, type=check_task_type, help='Task 1 or task 2')
+    parser.add_argument('-m', '--model', default=0, type=check_model_type, help='cGAN or cNF')
     parser.add_argument('-v', '--verbosity', default=0, type=check_verbosity_type, help='Verbosity level')
 
     return parser.parse_args()
