@@ -412,7 +412,7 @@ def test_glow(data_loader: DataLoader,
         batch_size = len(labels)
 
         sample, _ = glow.inverse(batch_size=batch_size)
-        print(sample.size())
+        sample = sample[:, :3, :, :]
         log_prob = glow.log_prob(sample, labels, bits_per_pixel=True)
         # sort by log_prob; flip high (left) to low (right)
         fake_images = sample[log_prob.argsort().flip(0)].view(batch_size, 4, image_size, image_size)
