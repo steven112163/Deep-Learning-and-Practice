@@ -320,20 +320,19 @@ def train_and_evaluate_glow(train_dataset: ICLEVRLoader,
     info_log('Start training')
     for epoch in range(epochs):
         # Train
-        # total_loss = train_glow(data_loader=train_loader,
-        #                         glow=glow,
-        #                         optimizer=optimizer,
-        #                         grad_norm_clip=grad_norm_clip,
-        #                         epoch=epoch,
-        #                         num_of_epochs=epochs,
-        #                         training_device=training_device)
-        # losses[epoch] = total_loss / len(train_dataset)
-        # print(f'[{epoch + 1}/{epochs}] Average loss: {losses[epoch]}')
+        total_loss = train_glow(data_loader=train_loader,
+                                glow=glow,
+                                optimizer=optimizer,
+                                grad_norm_clip=grad_norm_clip,
+                                epoch=epoch,
+                                num_of_epochs=epochs,
+                                training_device=training_device)
+        losses[epoch] = total_loss / len(train_dataset)
+        print(f'[{epoch + 1}/{epochs}] Average loss: {losses[epoch]}')
 
         # Test
         generated_image, total_accuracy = test_glow(data_loader=test_loader,
                                                     glow=glow,
-                                                    image_size=image_size,
                                                     epoch=epoch,
                                                     num_of_epochs=epochs,
                                                     evaluator=evaluator,
@@ -387,7 +386,6 @@ def train_glow(data_loader: DataLoader,
 
 def test_glow(data_loader: DataLoader,
               glow: Glow,
-              image_size: int,
               epoch: int,
               num_of_epochs: int,
               evaluator: EvaluationModel,
@@ -396,7 +394,6 @@ def test_glow(data_loader: DataLoader,
     Test Glow
     :param data_loader: testing data loader
     :param glow: glow model
-    :param image_size: image size (noise size)
     :param epoch: current epoch
     :param num_of_epochs: number of total epochs
     :param evaluator: evaluator
@@ -416,7 +413,6 @@ def test_glow(data_loader: DataLoader,
         log_prob = glow.log_prob(sample, labels, bits_per_pixel=True)
         # sort by log_prob; flip high (left) to low (right)
         fake_images = sample[log_prob.argsort().flip(0)]
-        print(fake_images.size())
 
         acc = evaluator.eval(fake_images, labels)
         total_accuracy += acc
