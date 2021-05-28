@@ -415,8 +415,8 @@ def test_glow(data_loader: DataLoader,
         sample = sample[:, :3, :, :]
         log_prob = glow.log_prob(sample, labels, bits_per_pixel=True)
         # sort by log_prob; flip high (left) to low (right)
-        fake_images = sample[log_prob.argsort().flip(0)].view(batch_size, 4, image_size, image_size)
-        fake_images = fake_images[:, :3, :, :]
+        fake_images = sample[log_prob.argsort().flip(0)]
+        print(fake_images.size())
 
         acc = evaluator.eval(fake_images, labels)
         total_accuracy += acc
