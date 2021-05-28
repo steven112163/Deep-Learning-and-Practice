@@ -333,8 +333,8 @@ def train_glow(data_loader: DataLoader,
         labels = labels.to(training_device).type(torch.float)
 
         glow.zero_grad()
-        loss = - glow.log_prob(images, labels, bits_per_pixel=True).mean(0)
-        total_loss += loss
+        loss = -glow.log_prob(images, labels, bits_per_pixel=True).mean(0)
+        total_loss += loss.item()
 
         optimizer.zero_grad()
         loss.backward()

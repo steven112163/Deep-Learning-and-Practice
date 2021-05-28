@@ -330,8 +330,8 @@ class Glow(nn.Module):
 
     def forward(self, x, label):
         condition = self.label_to_condition(label).view(-1, 1, self.input_dims[1], self.input_dims[2])
-        x = torch.cat([x, condition], 1)
         x, sum_logdets = self.preprocess(x)
+        x = torch.cat([x, condition], 1)
         # pass through flow
         zs = []
         for m in self.flowlevels:
