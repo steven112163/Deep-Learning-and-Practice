@@ -1,6 +1,7 @@
 from task_1_model import Generator, Discriminator
 from task_1_dataset import ICLEVRLoader
 from task_2_model import Glow
+from task_2_test_model import CondGlowModel
 from evaluator import EvaluationModel
 from argument_parser import parse_arguments
 from visualizer import plot_losses, plot_accuracies
@@ -314,7 +315,17 @@ def train_and_evaluate_glow(train_dataset: ICLEVRLoader,
 
     # Setup models
     info_log('Setup models ...')
-    glow = Glow(width=width, depth=depth, n_levels=num_levels).to(training_device)
+    # glow = Glow(width=width, depth=depth, n_levels=num_levels).to(training_device)
+    # optimizer = optim.Adam(glow.parameters(), lr=learning_rate_nf)
+    glow = CondGlowModel(x_size=(3, image_size, image_size),
+                         y_size=(3, image_size, image_size),
+                         x_hidden_channels=128,
+                         x_hidden_size=64,
+                         y_hidden_channels=256,
+                         flow_depth=depth,
+                         num_levels=num_levels,
+                         learn_top=False,
+                         y_bins=2.0)
     optimizer = optim.Adam(glow.parameters(), lr=learning_rate_nf)
 
     # Start training
@@ -350,7 +361,7 @@ def train_and_evaluate_glow(train_dataset: ICLEVRLoader,
 
 
 def train_glow(data_loader: DataLoader,
-               glow: Glow,
+               glow: CondGlowModel,
                optimizer: optim,
                grad_norm_clip: float,
                epoch: int,
@@ -374,10 +385,12 @@ def train_glow(data_loader: DataLoader,
         images = images.to(training_device)
         labels = labels.to(training_device).type(torch.float)
 
-        glow.zero_grad()
-        loss = -glow.log_prob(images, labels, bits_per_pixel=True).mean(0)
-        total_loss += loss.item()
+        # loss = -glow.log_prob(images, labels, bits_per_pixel=True).mean(0)
+        z, nll = glow(images, labels)
+        loss = torch.mean(nll)
+        total_loss += loss.data.cpu().item()
 
+        glow.zero_grad()
         optimizer.zero_grad()
         loss.backward()
 
@@ -392,7 +405,7 @@ def train_glow(data_loader: DataLoader,
 
 
 def test_glow(data_loader: DataLoader,
-              glow: Glow,
+              glow: CondGlowModel,
               epoch: int,
               num_of_epochs: int,
               evaluator: EvaluationModel,
