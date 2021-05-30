@@ -569,7 +569,7 @@ class CondGlowModel(nn.Module):
             return torch.zeros_like(self.new_mean), torch.zeros_like(self.new_mean)
 
     def forward(self, x=0.0, y=None, eps_std=1.0, reverse=False):
-        y = self.label_to_condition(y).view(32, 3, 64, 64)
+        y = self.label_to_condition(y).view(-1, 3, 64, 64)
         if not reverse:
             dimensions = y.size(1) * y.size(2) * y.size(3)
             log_det = torch.zeros_like(y[:, 0, 0, 0])
