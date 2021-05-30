@@ -424,15 +424,8 @@ def test_glow(data_loader: DataLoader,
         acc = evaluator.eval(fake_images, labels)
         total_accuracy += acc
 
-        # Generate images from fake images
-        transformation = transforms.Compose([transforms.Normalize(mean=[0., 0., 0.],
-                                                                  std=[1 / 0.5, 1 / 0.5, 1 / 0.5]),
-                                             transforms.Normalize(mean=[-0.5, -0.5, -0.5],
-                                                                  std=[1., 1., 1.]),
-                                             ])
-
         for fake_image in fake_images:
-            n_image = transformation(fake_image.cpu().detach())
+            n_image = fake_image.cpu().detach()
             generated_image = torch.cat([generated_image, n_image.view(1, 3, 64, 64)], 0)
 
         debug_log(f'[{epoch + 1}/{num_of_epochs}][{batch_idx + 1}/{len(data_loader)}]   Accuracy: {acc}')
@@ -494,8 +487,7 @@ def main() -> None:
                                              transforms.Lambda(lambda im: np.array(im, dtype=np.float32)),
                                              transforms.Lambda(lambda x: np.floor(x / 2 ** 8)),
                                              transforms.ToTensor(),
-                                             transforms.Lambda(lambda t: t + torch.rand_like(t) / 2 ** 8),
-                                             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+                                             transforms.Lambda(lambda t: t + torch.rand_like(t) / 2 ** 8)])
     # TODO: control data for different task
     train_dataset = ICLEVRLoader(root_folder='data/task_1/', trans=transformation, mode='train')
     test_dataset = ICLEVRLoader(root_folder='data/task_1/', mode='test')
