@@ -445,7 +445,8 @@ def test_glow(data_loader: DataLoader,
         transformed_images = torch.randn(0, 3, 64, 64)
         transformation = transforms.Compose([transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
         for fake_image in fake_images:
-            transformed_images = torch.cat([transformed_images, transformation(fake_image)], 0)
+            n_image = fake_image.cpu().detach()
+            transformed_images = torch.cat([transformed_images, transformation(n_image).view(1, 3, 64, 64)], 0)
 
         acc = evaluator.eval(transformed_images, labels)
         total_accuracy += acc
