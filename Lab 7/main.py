@@ -442,10 +442,12 @@ def test_glow(data_loader: DataLoader,
         fake_images, _ = glow(z, labels, reverse=True)
         fake_images = torch.sigmoid(fake_images)
 
+        transformed_images = torch.randn(0, 3, 64, 64)
         transformation = transforms.Compose([transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+        for fake_image in fake_images:
+            transformed_images = torch.cat([transformed_images, transformation(fake_image)], 0)
 
-
-        acc = evaluator.eval(transformation(fake_images), labels)
+        acc = evaluator.eval(transformed_images, labels)
         total_accuracy += acc
 
         for fake_image in fake_images:
