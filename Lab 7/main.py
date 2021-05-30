@@ -12,6 +12,7 @@ from typing import Tuple
 import matplotlib.pyplot as plt
 import torch.optim as optim
 import torch.nn as nn
+import numpy as np
 import sys
 import os
 import torch
@@ -115,7 +116,7 @@ def train_and_evaluate_dcgan(train_dataset: ICLEVRLoader,
 
     # Plot losses and accuracies
     info_log('Plot losses and accuracies ...')
-    plot_losses(generator_losses=generator_losses, discriminator_losses=discriminator_losses)
+    plot_losses(losses=(generator_losses, discriminator_losses), labels=['Generator', 'Discriminator'])
     plot_accuracies(accuracies=accuracies)
     plt.close()
 
@@ -341,6 +342,12 @@ def train_and_evaluate_glow(train_dataset: ICLEVRLoader,
         save_image(make_grid(generated_image, nrow=8), f'test_figure/{epoch}.jpg')
         print(f'[{epoch + 1}/{epochs}] Average accuracy: {accuracies[epoch]:.2f}')
 
+    # Plot losses and accuracies
+    info_log('Plot losses and accuracies ...')
+    plot_losses(losses=(losses,), labels=['loss'])
+    plot_accuracies(accuracies=accuracies)
+    plt.close()
+
 
 def train_glow(data_loader: DataLoader,
                glow: Glow,
@@ -473,11 +480,22 @@ def main() -> None:
 
     # Read data
     info_log('Read data ...')
-    transformation = transforms.Compose([transforms.RandomCrop(240),
-                                         transforms.RandomHorizontalFlip(),
-                                         transforms.Resize((image_size, image_size)),
-                                         transforms.ToTensor(),
-                                         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+
+    if model == 'gan':
+        transformation = transforms.Compose([transforms.RandomCrop(240),
+                                             transforms.RandomHorizontalFlip(),
+                                             transforms.Resize((image_size, image_size)),
+                                             transforms.ToTensor(),
+                                             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+    else:
+        transformation = transforms.Compose([transforms.RandomCrop(240),
+                                             transforms.RandomHorizontalFlip(),
+                                             transforms.Resize((image_size, image_size)),
+                                             transforms.Lambda(lambda im: np.array(im, dtype=np.float32)),
+                                             transforms.Lambda(lambda x: np.floor(x / 2 ** 8)),
+                                             transforms.ToTensor(),
+                                             transforms.Lambda(lambda t: t + torch.rand_like(t) / 2 ** 8),
+                                             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     # TODO: control data for different task
     train_dataset = ICLEVRLoader(root_folder='data/task_1/', trans=transformation, mode='train')
     test_dataset = ICLEVRLoader(root_folder='data/task_1/', mode='test')
