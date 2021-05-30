@@ -399,7 +399,7 @@ def train_glow(data_loader: DataLoader,
         optimizer.zero_grad()
         loss.backward()
 
-        nn.utils.clip_grad_norm_(glow.parameters(), grad_norm_clip)
+        # nn.utils.clip_grad_norm_(glow.parameters(), grad_norm_clip)
 
         optimizer.step()
 
@@ -442,11 +442,20 @@ def test_glow(data_loader: DataLoader,
         fake_images, _ = glow(z, labels, reverse=True)
         fake_images = torch.sigmoid(fake_images)
 
-        acc = evaluator.eval(fake_images, labels)
+        transformation = transforms.Compose([transforms.Normalize(mean=[0., 0., 0.],
+                                                                  std=[1 / 0.5, 1 / 0.5, 1 / 0.5]),
+                                             transforms.Normalize(mean=[-0.5, -0.5, -0.5],
+                                                                  std=[1., 1., 1.]),
+                                             ])
+
+
+        acc = evaluator.eval(transformation(fake_images), labels)
         total_accuracy += acc
 
+        transformation = transforms.Compose([transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+
         for fake_image in fake_images:
-            n_image = fake_image.cpu().detach()
+            n_image = transformation(fake_image.cpu().detach())
             generated_image = torch.cat([generated_image, n_image.view(1, 3, 64, 64)], 0)
 
         debug_log(f'[{epoch + 1}/{num_of_epochs}][{batch_idx + 1}/{len(data_loader)}]   Accuracy: {acc}')
