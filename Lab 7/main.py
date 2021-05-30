@@ -325,7 +325,7 @@ def train_and_evaluate_glow(train_dataset: ICLEVRLoader,
                          flow_depth=depth,
                          num_levels=num_levels,
                          learn_top=False,
-                         y_bins=2.0)
+                         y_bins=2.0).to(training_device)
     optimizer = optim.Adam(glow.parameters(), lr=learning_rate_nf)
 
     # Start training
