@@ -14,18 +14,18 @@ class Actnorm(nn.Module):
         self.register_buffer('initialized', torch.tensor(0).byte())
 
     def forward(self, x):
-        if not self.initialized:
-            # per channel mean and variance where x.shape = (B, C, H, W)
-            self.bias.squeeze().data.copy_(x.transpose(0, 1).flatten(1).mean(1)).view_as(self.scale)
-            self.scale.squeeze().data.copy_(x.transpose(0, 1).flatten(1).std(1, False) + 1e-6).view_as(self.bias)
-            self.initialized += 1
-
-        z = (x - self.bias) / self.scale
-        log_det = - self.scale.abs().log().sum() * x.shape[2] * x.shape[3]
-        return z, log_det
+        return x * self.scale + self.bias, self.scale.abs().log().sum() * x.shape[2] * x.shape[3]
 
     def inverse(self, z):
-        return z * self.scale + self.bias, self.scale.abs().log().sum() * z.shape[2] * z.shape[3]
+        if not self.initialized:
+            # Per channel mean and variance where x.shape = (B, C, H, W)
+            self.bias.squeeze().data.copy_(z.transpose(0, 1).flatten(1).mean(1)).view_as(self.scale)
+            self.scale.squeeze().data.copy_(z.transpose(0, 1).flatten(1).std(1, False) + 1e-6).view_as(self.bias)
+            self.initialized += 1
+
+        x = (z - self.bias) / self.scale
+        log_det = - self.scale.abs().log().sum() * z.shape[2] * z.shape[3]
+        return x, log_det
 
 
 class Invertible1x1Conv(nn.Module):
