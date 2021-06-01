@@ -86,8 +86,6 @@ class ActNorm(nn.Module):
 
         if sldj is not None:
             ldj = self.logs.flatten(1).sum(-1) * x.size(2) * x.size(3)
-            with torch.no_grad():
-                print(ldj[0])
             if reverse:
                 sldj = sldj - ldj
             else:
