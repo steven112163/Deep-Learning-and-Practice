@@ -106,8 +106,8 @@ class ActNorm(nn.Module):
             logs_scale = logs_scale.view(batch_size, channel_size, 1, 1)
             logs_scale = logs_scale.mean(dim=0)
 
-            self.bias.data.copy_((self.bias * bias_scale).data)
-            self.logs.data.copy_((self.logs * logs_scale).data)
+            self.bias.data.copy_((self.bias * (bias_scale + 1)).data)
+            self.logs.data.copy_((self.logs * (logs_scale + 1)).data)
 
         if reverse:
             x, ldj = self._scale(x, ldj, reverse)
