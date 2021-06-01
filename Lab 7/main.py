@@ -403,8 +403,7 @@ def train_glow(data_loader: DataLoader,
 
         optimizer.step()
 
-        if batch_idx % 50 == 0:
-            debug_log(f'[{epoch + 1}/{num_of_epochs}][{batch_idx + 1}/{len(data_loader)}]   Loss: {loss}')
+        debug_log(f'[{epoch + 1}/{num_of_epochs}][{batch_idx + 1}/{len(data_loader)}]   Loss: {loss}')
 
     return total_loss
 
