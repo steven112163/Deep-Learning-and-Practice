@@ -35,44 +35,35 @@ class ActNorm(nn.Module):
         > https://github.com/openai/glow
     """
 
-    def __init__(self, num_features, scale=1., return_ldj=False):
+    def __init__(self, in_channels, cond_channels, cond_size, mid_channels, scale=1., return_ldj=False):
         super(ActNorm, self).__init__()
         self.register_buffer('is_initialized', torch.zeros(1))
-        self.bias = nn.Parameter(torch.zeros(1, num_features, 1, 1))
-        self.logs = nn.Parameter(torch.zeros(1, num_features, 1, 1))
 
-        self.num_features = num_features
-        self.scale = float(scale)
+        self.bias_producer = CondNN(in_channels=cond_channels, mid_channels=mid_channels, out_channels=in_channels)
+        self.logs_producer = CondNN(in_channels=cond_channels, mid_channels=mid_channels, out_channels=in_channels)
+
+        self.bias_converter = nn.Linear(in_features=cond_size[2] * cond_size[3], out_features=1)
+        self.logs_converter = nn.Linear(in_features=cond_size[2] * cond_size[3], out_features=1)
+
+        self.in_channels = in_channels
+        self.scale = nn.Parameter(torch.ones(in_channels, 1, 1))
         self.eps = 1e-6
         self.return_ldj = return_ldj
 
-    def initialize_parameters(self, x):
-        if not self.training:
-            return
-
-        with torch.no_grad():
-            bias = -mean_dim(x.clone(), dim=[0, 2, 3], keepdims=True)
-            v = mean_dim((x.clone() + bias) ** 2, dim=[0, 2, 3], keepdims=True)
-            logs = (self.scale / (v.sqrt() + self.eps)).log()
-            self.bias.data.copy_(bias.data)
-            self.logs.data.copy_(logs.data)
-            self.is_initialized += 1.
-
-    def _center(self, x, reverse=False):
+    def _center(self, x, bias, reverse=False):
         if reverse:
-            return x - self.bias
+            return x - bias
         else:
-            return x + self.bias
+            return x + bias
 
-    def _scale(self, x, sldj, reverse=False):
-        logs = self.logs
+    def _scale(self, x, sldj, logs, reverse=False):
         if reverse:
             x = x * logs.mul(-1).exp()
         else:
             x = x * logs.exp()
 
         if sldj is not None:
-            ldj = logs.sum() * x.size(2) * x.size(3)
+            ldj = logs.sum(dim=1) * x.size(2) * x.size(3)
             if reverse:
                 sldj = sldj - ldj
             else:
@@ -80,16 +71,24 @@ class ActNorm(nn.Module):
 
         return x, sldj
 
-    def forward(self, x, ldj=None, reverse=False):
-        if not self.is_initialized:
-            self.initialize_parameters(x)
+    def forward(self, x, x_cond, ldj=None, reverse=False):
+        batch_size, channel_size, height, width = x.size()
+
+        bias = self.bias_producer(x_cond)
+        bias = self.bias_converter(bias.view(batch_size, channel_size, height*width))
+        bias = bias.view(batch_size, channel_size, 1, 1)
+
+        logs = self.logs_producer(x_cond)
+        logs = self.bias_converter(logs.view(batch_size, channel_size, height*width))
+        logs = logs.view(batch_size, channel_size, 1, 1)
+        logs = self.scale * torch.tanh(logs)
 
         if reverse:
-            x, ldj = self._scale(x, ldj, reverse)
-            x = self._center(x, reverse)
+            x, ldj = self._scale(x, ldj, logs, reverse)
+            x = self._center(x, bias, reverse)
         else:
-            x = self._center(x, reverse)
-            x, ldj = self._scale(x, ldj, reverse)
+            x = self._center(x, bias, reverse)
+            x, ldj = self._scale(x, ldj, logs, reverse)
 
         if self.return_ldj:
             return x, ldj
@@ -97,47 +96,9 @@ class ActNorm(nn.Module):
         return x
 
 
-class InvConv(nn.Module):
-    """Invertible 1x1 Convolution for 2D inputs. Originally described in Glow
-    (https://arxiv.org/abs/1807.03039). Does not support LU-decomposed version.
-    Args:
-        in_channels (int): Number of channels in the input and output.
-        cond_channels (int):
+class CondNN(nn.Module):
     """
-
-    def __init__(self, in_channels, cond_channels, mid_channels):
-        super(InvConv, self).__init__()
-        self.in_channels = in_channels
-        self.nn = CondWNN(cond_channels, mid_channels, in_channels)
-
-    def forward(self, x, x_cond, sldj, reverse=False):
-        batch_size, channel_size, height, width = x.size()
-        converter = nn.Linear(height * width, channel_size)
-
-        # (batch_size, channel_size, height, width)
-        weight = self.nn(x_cond)
-        # (batch_size, channel_size, channel_size)
-        weight = converter(weight.view(batch_size, channel_size, height * width))
-
-        ldj = torch.slogdet(weight)[1] * x.size(2) * x.size(3)
-
-        if reverse:
-            weight = torch.inverse(weight.double()).float()
-            sldj = sldj - ldj
-        else:
-            weight = weight
-            sldj = sldj + ldj
-
-        weight = weight.view(batch_size * channel_size, channel_size, 1, 1)
-        x = x.view(1, batch_size * channel_size, height, width)
-        z = F.conv2d(x, weight, groups=batch_size).view(batch_size, channel_size, height, width)
-
-        return z, sldj
-
-
-class CondWNN(nn.Module):
-    """
-    Small convolutional network used to compute weight matrix.
+    Small convolutional network used to compute scale and bias.
     Args:
         in_channels (int): Number of channels in the condition.
         mid_channels (int): Number of channels in the hidden activations.
@@ -146,7 +107,7 @@ class CondWNN(nn.Module):
     """
 
     def __init__(self, in_channels, mid_channels, out_channels, use_act_norm=False):
-        super(CondWNN, self).__init__()
+        super(CondNN, self).__init__()
         norm_fn = ActNorm if use_act_norm else nn.BatchNorm2d
 
         self.in_norm = norm_fn(in_channels)
@@ -181,6 +142,38 @@ class CondWNN(nn.Module):
         x = self.out_conv(x)
 
         return x
+
+
+class InvConv(nn.Module):
+    """Invertible 1x1 Convolution for 2D inputs. Originally described in Glow
+    (https://arxiv.org/abs/1807.03039). Does not support LU-decomposed version.
+    Args:
+        num_channels (int): Number of channels in the input and output.
+    """
+
+    def __init__(self, num_channels):
+        super(InvConv, self).__init__()
+        self.num_channels = num_channels
+
+        # Initialize with a random orthogonal matrix
+        w_init = np.random.randn(num_channels, num_channels)
+        w_init = np.linalg.qr(w_init)[0].astype(np.float32)
+        self.weight = nn.Parameter(torch.from_numpy(w_init))
+
+    def forward(self, x, sldj, reverse=False):
+        ldj = torch.slogdet(self.weight)[1] * x.size(2) * x.size(3)
+
+        if reverse:
+            weight = torch.inverse(self.weight.double()).float()
+            sldj = sldj - ldj
+        else:
+            weight = self.weight
+            sldj = sldj + ldj
+
+        weight = weight.view(self.num_channels, self.num_channels, 1, 1)
+        z = F.conv2d(x, weight)
+
+        return z, sldj
 
 
 class Coupling(nn.Module):
@@ -283,6 +276,7 @@ class Glow(nn.Module):
         self.register_buffer('bounds', torch.tensor([0.95], dtype=torch.float32))
         self.flows = _Glow(in_channels=4 * 3,  # RGB image after squeeze
                            cond_channels=4,
+                           cond_size=(32, 4, 32, 32),
                            mid_channels=num_channels,
                            num_levels=num_levels,
                            num_steps=num_steps)
@@ -344,16 +338,19 @@ class _Glow(nn.Module):
         num_steps (int): Number of steps of flow for each level.
     """
 
-    def __init__(self, in_channels, cond_channels, mid_channels, num_levels, num_steps):
+    def __init__(self, in_channels, cond_channels, cond_size, mid_channels, num_levels, num_steps):
         super(_Glow, self).__init__()
         self.steps = nn.ModuleList([_FlowStep(in_channels=in_channels,
                                               cond_channels=cond_channels,
+                                              cond_size=cond_size,
                                               mid_channels=mid_channels)
                                     for _ in range(num_steps)])
 
         if num_levels > 1:
+            cond_size = (cond_size[0], cond_size[1] * 4, cond_size[2] // 2, cond_size[3] // 2)
             self.next = _Glow(in_channels=2 * in_channels,
                               cond_channels=4 * cond_channels,
+                              cond_size=cond_size,
                               mid_channels=mid_channels,
                               num_levels=num_levels - 1,
                               num_steps=num_steps)
@@ -382,22 +379,22 @@ class _Glow(nn.Module):
 
 
 class _FlowStep(nn.Module):
-    def __init__(self, in_channels, cond_channels, mid_channels):
+    def __init__(self, in_channels, cond_channels, cond_size, mid_channels):
         super(_FlowStep, self).__init__()
 
         # Activation normalization, invertible 1x1 convolution, affine coupling
-        self.norm = ActNorm(in_channels, return_ldj=True)
-        self.conv = InvConv(in_channels, cond_channels, mid_channels)
+        self.norm = ActNorm(in_channels, cond_channels, cond_size, mid_channels, return_ldj=True)
+        self.conv = InvConv(in_channels)
         self.coup = Coupling(in_channels // 2, cond_channels, mid_channels)
 
     def forward(self, x, x_cond, sldj=None, reverse=False):
         if reverse:
             x, sldj = self.coup(x, x_cond, sldj, reverse)
-            x, sldj = self.conv(x, x_cond, sldj, reverse)
-            x, sldj = self.norm(x, sldj, reverse)
+            x, sldj = self.conv(x, sldj, reverse)
+            x, sldj = self.norm(x, x_cond, sldj, reverse)
         else:
-            x, sldj = self.norm(x, sldj, reverse)
-            x, sldj = self.conv(x, x_cond, sldj, reverse)
+            x, sldj = self.norm(x, x_cond, sldj, reverse)
+            x, sldj = self.conv(x, sldj, reverse)
             x, sldj = self.coup(x, x_cond, sldj, reverse)
 
         return x, sldj
