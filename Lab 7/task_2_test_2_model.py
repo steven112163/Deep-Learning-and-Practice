@@ -38,32 +38,50 @@ class ActNorm(nn.Module):
     def __init__(self, in_channels, cond_channels, cond_size, mid_channels, scale=1., return_ldj=False):
         super(ActNorm, self).__init__()
         self.register_buffer('is_initialized', torch.zeros(1))
+        self.bias = nn.Parameter(torch.zeros(cond_size[0], in_channels, 1, 1))
+        self.logs = nn.Parameter(torch.zeros(cond_size[0], in_channels, 1, 1))
 
-        self.bias_producer = CondNN(in_channels=cond_channels, mid_channels=mid_channels, out_channels=in_channels)
-        self.logs_producer = CondNN(in_channels=cond_channels, mid_channels=mid_channels, out_channels=in_channels)
+        self.producer = CondNN(in_channels=cond_channels, mid_channels=mid_channels, out_channels=2 * in_channels)
+        self.converter = nn.Sequential(
+            nn.Linear(in_features=cond_size[2] * cond_size[3], out_features=20),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_features=20, out_features=20),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_features=20, out_features=1),
+            nn.Tanh()
+        )
 
-        self.bias_converter = nn.Linear(in_features=cond_size[2] * cond_size[3], out_features=1)
-        self.logs_converter = nn.Linear(in_features=cond_size[2] * cond_size[3], out_features=1)
-
-        self.in_channels = in_channels
-        self.scale = nn.Parameter(torch.ones(in_channels, 1, 1))
+        self.num_features = in_channels
+        self.scale = float(scale)
         self.eps = 1e-6
         self.return_ldj = return_ldj
 
-    def _center(self, x, bias, reverse=False):
-        if reverse:
-            return x - bias
-        else:
-            return x + bias
+    def initialize_parameters(self, x):
+        if not self.training:
+            return
 
-    def _scale(self, x, sldj, logs, reverse=False):
+        with torch.no_grad():
+            bias = -mean_dim(x.clone(), dim=[2, 3], keepdims=True)
+            v = mean_dim((x.clone() + bias) ** 2, dim=[2, 3], keepdims=True)
+            logs = (self.scale / (v.sqrt() + self.eps)).log()
+            self.bias.data.copy_(bias.data)
+            self.logs.data.copy_(logs.data)
+            self.is_initialized += 1.
+
+    def _center(self, x, reverse=False):
         if reverse:
-            x = x * logs.mul(-1).exp()
+            return x - self.bias
         else:
-            x = x * logs.exp()
+            return x + self.bias
+
+    def _scale(self, x, sldj, reverse=False):
+        if reverse:
+            x = x * self.logs.mul(-1).exp()
+        else:
+            x = x * self.logs.exp()
 
         if sldj is not None:
-            ldj = logs.sum(dim=1) * x.size(2) * x.size(3)
+            ldj = self.logs.flatten(1).sum(-1) * x.size(2) * x.size(3)
             if reverse:
                 sldj = sldj - ldj
             else:
@@ -72,23 +90,29 @@ class ActNorm(nn.Module):
         return x, sldj
 
     def forward(self, x, x_cond, ldj=None, reverse=False):
-        batch_size, channel_size, height, width = x.size()
+        if not self.is_initialized:
+            self.initialize_parameters(x)
+        else:
+            batch_size, channel_size, height, width = x.size()
 
-        bias = self.bias_producer(x_cond)
-        bias = self.bias_converter(bias.view(batch_size, channel_size, height*width))
-        bias = bias.view(batch_size, channel_size, 1, 1)
+            bias_and_logs_scale = self.producer(x_cond)
+            bias_scale, logs_scale = bias_and_logs_scale[:, 0::2, ...], bias_and_logs_scale[:, 1::2, ...]
 
-        logs = self.logs_producer(x_cond)
-        logs = self.bias_converter(logs.view(batch_size, channel_size, height*width))
-        logs = logs.view(batch_size, channel_size, 1, 1)
-        logs = self.scale * torch.tanh(logs)
+            bias_scale = self.converter(bias_scale.view(batch_size, channel_size, height * width))
+            logs_scale = self.converter(logs_scale.view(batch_size, channel_size, height * width))
+
+            bias_scale = bias_scale.view(batch_size, channel_size, 1, 1)
+            logs_scale = logs_scale.view(batch_size, channel_size, 1, 1)
+
+            self.bias.data.copy_((self.bias * bias_scale).data)
+            self.logs.data.copy_((self.logs * logs_scale).data)
 
         if reverse:
-            x, ldj = self._scale(x, ldj, logs, reverse)
-            x = self._center(x, bias, reverse)
+            x, ldj = self._scale(x, ldj, reverse)
+            x = self._center(x, reverse)
         else:
-            x = self._center(x, bias, reverse)
-            x, ldj = self._scale(x, ldj, logs, reverse)
+            x = self._center(x, reverse)
+            x, ldj = self._scale(x, ldj, reverse)
 
         if self.return_ldj:
             return x, ldj
