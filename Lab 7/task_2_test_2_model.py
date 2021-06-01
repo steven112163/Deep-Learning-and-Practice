@@ -39,9 +39,9 @@ class ActNorm(nn.Module):
         super(ActNorm, self).__init__()
         self.register_buffer('is_initialized', torch.zeros(1))
         self.bias = nn.Parameter(torch.zeros(1, in_channels, 1, 1))
-        self.initialized_bias = torch.zeros(1, in_channels, 1, 1)
+        self.initialized_bias = nn.Parameter(torch.zeros(1, in_channels, 1, 1))
         self.logs = nn.Parameter(torch.zeros(1, in_channels, 1, 1))
-        self.initialized_logs = torch.zeros(1, in_channels, 1, 1)
+        self.initialized_logs = nn.Parameter(torch.zeros(1, in_channels, 1, 1))
 
         self.producer = CondNN(in_channels=cond_channels, mid_channels=mid_channels, out_channels=2 * in_channels)
         self.converter = nn.Sequential(
@@ -86,6 +86,8 @@ class ActNorm(nn.Module):
 
         if sldj is not None:
             ldj = self.logs.flatten(1).sum(-1) * x.size(2) * x.size(3)
+            with torch.no_grad():
+                print(ldj[0])
             if reverse:
                 sldj = sldj - ldj
             else:
@@ -110,8 +112,8 @@ class ActNorm(nn.Module):
             logs_scale = logs_scale.view(batch_size, channel_size, 1, 1)
             logs_scale = logs_scale.mean(dim=0)
 
-            self.bias.data.copy_(((self.bias + self.initialized_bias) * bias_scale).data)
-            self.logs.data.copy_(((self.logs + self.initialized_logs) * logs_scale).data)
+            self.bias.data.copy_(((self.bias + self.initialized_bias.detach()) * bias_scale).data)
+            self.logs.data.copy_(((self.logs + self.initialized_logs.detach()) * logs_scale).data)
 
         if reverse:
             x, ldj = self._scale(x, ldj, reverse)
