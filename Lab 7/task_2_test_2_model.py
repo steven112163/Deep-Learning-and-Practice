@@ -101,32 +101,86 @@ class InvConv(nn.Module):
     """Invertible 1x1 Convolution for 2D inputs. Originally described in Glow
     (https://arxiv.org/abs/1807.03039). Does not support LU-decomposed version.
     Args:
-        num_channels (int): Number of channels in the input and output.
+        in_channels (int): Number of channels in the input and output.
+        cond_channels (int):
     """
 
-    def __init__(self, num_channels):
+    def __init__(self, in_channels, cond_channels, mid_channels):
         super(InvConv, self).__init__()
-        self.num_channels = num_channels
+        self.in_channels = in_channels
+        self.nn = CondWNN(cond_channels, mid_channels, in_channels)
 
-        # Initialize with a random orthogonal matrix
-        w_init = np.random.randn(num_channels, num_channels)
-        w_init = np.linalg.qr(w_init)[0].astype(np.float32)
-        self.weight = nn.Parameter(torch.from_numpy(w_init))
+    def forward(self, x, x_cond, sldj, reverse=False):
+        batch_size, channel_size, height, width = x.size()
+        converter = nn.Linear(height * width, channel_size)
 
-    def forward(self, x, sldj, reverse=False):
-        ldj = torch.slogdet(self.weight)[1] * x.size(2) * x.size(3)
+        # (batch_size, channel_size, height, width)
+        weight = self.nn(x_cond)
+        # (batch_size, channel_size, channel_size)
+        weight = converter(weight.view(batch_size, channel_size, height * width))
+
+        ldj = torch.slogdet(weight)[1] * x.size(2) * x.size(3)
 
         if reverse:
-            weight = torch.inverse(self.weight.double()).float()
+            weight = torch.inverse(weight.double()).float()
             sldj = sldj - ldj
         else:
-            weight = self.weight
+            weight = weight
             sldj = sldj + ldj
 
-        weight = weight.view(self.num_channels, self.num_channels, 1, 1)
-        z = F.conv2d(x, weight)
+        weight = weight.view(batch_size * channel_size, channel_size, 1, 1)
+        x = x.view(1, batch_size * channel_size, height, width)
+        z = F.conv2d(x, weight, groups=batch_size).view(batch_size, channel_size, height, width)
 
         return z, sldj
+
+
+class CondWNN(nn.Module):
+    """
+    Small convolutional network used to compute weight matrix.
+    Args:
+        in_channels (int): Number of channels in the condition.
+        mid_channels (int): Number of channels in the hidden activations.
+        out_channels (int): Number of channels in the output.
+        use_act_norm (bool): Use activation norm rather than batch norm.
+    """
+
+    def __init__(self, in_channels, mid_channels, out_channels, use_act_norm=False):
+        super(CondWNN, self).__init__()
+        norm_fn = ActNorm if use_act_norm else nn.BatchNorm2d
+
+        self.in_norm = norm_fn(in_channels)
+        self.in_conv = nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False)
+        nn.init.normal_(self.in_conv.weight, 0., 0.05)
+
+        self.mid_conv_1 = nn.Conv2d(mid_channels, mid_channels, kernel_size=3, padding=1, bias=False)
+        nn.init.normal_(self.mid_conv_1.weight, 0., 0.05)
+
+        self.mid_norm = norm_fn(mid_channels)
+        self.mid_conv_2 = nn.Conv2d(mid_channels, mid_channels, kernel_size=1, padding=0, bias=False)
+        nn.init.normal_(self.mid_conv_2.weight, 0., 0.05)
+
+        self.out_norm = norm_fn(mid_channels)
+        self.out_conv = nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=True)
+        nn.init.zeros_(self.out_conv.weight)
+        nn.init.zeros_(self.out_conv.bias)
+
+    def forward(self, x):
+        x = self.in_norm(x)
+        x = self.in_conv(x)
+        x = F.relu(x)
+
+        x = self.mid_conv_1(x)
+        x = self.mid_norm(x)
+        x = F.relu(x)
+
+        x = self.mid_conv_2(x)
+        x = self.out_norm(x)
+        x = F.relu(x)
+
+        x = self.out_conv(x)
+
+        return x
 
 
 class Coupling(nn.Module):
@@ -142,7 +196,7 @@ class Coupling(nn.Module):
 
     def __init__(self, in_channels, cond_channels, mid_channels):
         super(Coupling, self).__init__()
-        self.nn = NN(in_channels, cond_channels, mid_channels, 2 * in_channels)
+        self.nn = CondSTNN(in_channels, cond_channels, mid_channels, 2 * in_channels)
         self.scale = nn.Parameter(torch.ones(in_channels, 1, 1))
 
     def forward(self, x, x_cond, ldj, reverse=False):
@@ -154,10 +208,10 @@ class Coupling(nn.Module):
 
         # Scale and translate
         if reverse:
-            x_change = x_change * s.mul(-1).exp() - t
+            x_change = (x_change - t) * s.mul(-1).exp()
             ldj = ldj - s.flatten(1).sum(-1)
         else:
-            x_change = (x_change + t) * s.exp()
+            x_change = x_change * s.exp() + t
             ldj = ldj + s.flatten(1).sum(-1)
 
         x = torch.cat((x_change, x_id), dim=1)
@@ -165,8 +219,9 @@ class Coupling(nn.Module):
         return x, ldj
 
 
-class NN(nn.Module):
-    """Small convolutional network used to compute scale and translate factors.
+class CondSTNN(nn.Module):
+    """
+    Small convolutional network used to compute scale and translate factors.
     Args:
         in_channels (int): Number of channels in the input.
         mid_channels (int): Number of channels in the hidden activations.
@@ -176,25 +231,25 @@ class NN(nn.Module):
 
     def __init__(self, in_channels, cond_channels, mid_channels, out_channels,
                  use_act_norm=False):
-        super(NN, self).__init__()
+        super(CondSTNN, self).__init__()
         norm_fn = ActNorm if use_act_norm else nn.BatchNorm2d
 
         self.in_norm = norm_fn(in_channels)
         self.in_conv = nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False)
-        self.in_condconv = nn.Conv2d(cond_channels, mid_channels, kernel_size=3, padding=1, bias=False)
+        self.in_cond_conv = nn.Conv2d(cond_channels, mid_channels, kernel_size=3, padding=1, bias=False)
         nn.init.normal_(self.in_conv.weight, 0., 0.05)
-        nn.init.normal_(self.in_condconv.weight, 0., 0.05)
+        nn.init.normal_(self.in_cond_conv.weight, 0., 0.05)
 
-        self.mid_conv1 = nn.Conv2d(mid_channels, mid_channels, kernel_size=3, padding=1, bias=False)
-        self.mid_condconv1 = nn.Conv2d(cond_channels, mid_channels, kernel_size=3, padding=1, bias=False)
-        nn.init.normal_(self.mid_conv1.weight, 0., 0.05)
-        nn.init.normal_(self.mid_condconv1.weight, 0., 0.05)
+        self.mid_conv_1 = nn.Conv2d(mid_channels, mid_channels, kernel_size=3, padding=1, bias=False)
+        self.mid_cond_conv_1 = nn.Conv2d(cond_channels, mid_channels, kernel_size=3, padding=1, bias=False)
+        nn.init.normal_(self.mid_conv_1.weight, 0., 0.05)
+        nn.init.normal_(self.mid_cond_conv_1.weight, 0., 0.05)
 
         self.mid_norm = norm_fn(mid_channels)
-        self.mid_conv2 = nn.Conv2d(mid_channels, mid_channels, kernel_size=1, padding=0, bias=False)
-        self.mid_condconv2 = nn.Conv2d(cond_channels, mid_channels, kernel_size=1, padding=0, bias=False)
-        nn.init.normal_(self.mid_conv2.weight, 0., 0.05)
-        nn.init.normal_(self.mid_condconv2.weight, 0., 0.05)
+        self.mid_conv_2 = nn.Conv2d(mid_channels, mid_channels, kernel_size=1, padding=0, bias=False)
+        self.mid_cond_conv_2 = nn.Conv2d(cond_channels, mid_channels, kernel_size=1, padding=0, bias=False)
+        nn.init.normal_(self.mid_conv_2.weight, 0., 0.05)
+        nn.init.normal_(self.mid_cond_conv_2.weight, 0., 0.05)
 
         self.out_norm = norm_fn(mid_channels)
         self.out_conv = nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=True)
@@ -203,14 +258,14 @@ class NN(nn.Module):
 
     def forward(self, x, x_cond):
         x = self.in_norm(x)
-        x = self.in_conv(x) + self.in_condconv(x_cond)
+        x = self.in_conv(x) + self.in_cond_conv(x_cond)
         x = F.relu(x)
 
-        x = self.mid_conv1(x) + self.mid_condconv1(x_cond)
+        x = self.mid_conv_1(x) + self.mid_cond_conv_1(x_cond)
         x = self.mid_norm(x)
         x = F.relu(x)
 
-        x = self.mid_conv2(x) + self.mid_condconv2(x_cond)
+        x = self.mid_conv_2(x) + self.mid_cond_conv_2(x_cond)
         x = self.out_norm(x)
         x = F.relu(x)
 
@@ -332,17 +387,17 @@ class _FlowStep(nn.Module):
 
         # Activation normalization, invertible 1x1 convolution, affine coupling
         self.norm = ActNorm(in_channels, return_ldj=True)
-        self.conv = InvConv(in_channels)
+        self.conv = InvConv(in_channels, cond_channels, mid_channels)
         self.coup = Coupling(in_channels // 2, cond_channels, mid_channels)
 
     def forward(self, x, x_cond, sldj=None, reverse=False):
         if reverse:
             x, sldj = self.coup(x, x_cond, sldj, reverse)
-            x, sldj = self.conv(x, sldj, reverse)
+            x, sldj = self.conv(x, x_cond, sldj, reverse)
             x, sldj = self.norm(x, sldj, reverse)
         else:
             x, sldj = self.norm(x, sldj, reverse)
-            x, sldj = self.conv(x, sldj, reverse)
+            x, sldj = self.conv(x, x_cond, sldj, reverse)
             x, sldj = self.coup(x, x_cond, sldj, reverse)
 
         return x, sldj
