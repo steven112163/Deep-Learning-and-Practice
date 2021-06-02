@@ -221,7 +221,7 @@ class CondNN(nn.Module):
 
 class CGlow(nn.Module):
 
-    def __init__(self, num_channels, num_levels, num_steps, num_classes, mode='sketch'):
+    def __init__(self, num_channels, num_levels, num_steps, num_classes, image_size, mode='sketch'):
         super(CGlow, self).__init__()
 
         # Use bounds to rescale images before converting to logits, not learned
@@ -237,7 +237,7 @@ class CGlow(nn.Module):
             nn.ReLU(inplace=True),
             nn.Linear(in_features=16 * 16, out_features=32 * 32, bias=False),
             nn.ReLU(inplace=True),
-            nn.Linear(in_features=32 * 32, out_features=64 * 64)
+            nn.Linear(in_features=32 * 32, out_features=image_size * image_size)
         )
 
     def forward(self, x, x_cond, reverse=False):

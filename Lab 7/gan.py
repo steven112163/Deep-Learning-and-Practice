@@ -105,7 +105,18 @@ class Discriminator(nn.Module):
             nn.Sigmoid()
         )
 
-        self.label_to_condition = nn.Linear(24, image_size * image_size, bias=True)
+        self.label_to_condition = nn.Sequential(
+            nn.Linear(in_features=24,
+                      out_features=16 * 16,
+                      bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_features=16 * 16,
+                      out_features=32 * 32,
+                      bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_features=32 * 32,
+                      out_features=image_size * image_size)
+        )
         self.image_size = image_size
 
     def forward(self, x, label):

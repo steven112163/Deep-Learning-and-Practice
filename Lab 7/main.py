@@ -13,7 +13,6 @@ from typing import Tuple
 import matplotlib.pyplot as plt
 import torch.optim as optim
 import torch.nn as nn
-import numpy as np
 import sys
 import os
 import torch
@@ -286,6 +285,7 @@ def train_and_evaluate_cglow(train_dataset: ICLEVRLoader,
                              test_loader: DataLoader,
                              evaluator: EvaluationModel,
                              learning_rate_nf: float,
+                             image_size: int,
                              width: int,
                              depth: int,
                              num_levels: int,
@@ -300,6 +300,7 @@ def train_and_evaluate_cglow(train_dataset: ICLEVRLoader,
     :param test_loader: testing data loader
     :param evaluator: evaluator
     :param learning_rate_nf: learning rate of normalizing flow
+    :param image_size: image size (noise size)
     :param width: dimension of the hidden layers in normalizing flow
     :param depth: depth of the normalizing flow
     :param num_levels: number of levels in normalizing flow
@@ -315,8 +316,8 @@ def train_and_evaluate_cglow(train_dataset: ICLEVRLoader,
 
     # Setup models
     info_log('Setup models ...')
-    glow = CGlow(num_channels=width, num_levels=num_levels, num_steps=depth, num_classes=num_classes).to(
-        training_device)
+    glow = CGlow(num_channels=width, num_levels=num_levels, num_steps=depth, num_classes=num_classes,
+                 image_size=image_size).to(training_device)
     optimizer = optim.Adam(glow.parameters(), lr=learning_rate_nf)
     loss_fn = NLLLoss().to(training_device)
 
@@ -367,7 +368,7 @@ def train_cglow(data_loader: DataLoader,
     """
     Train cGlow
     :param data_loader: training data loader
-    :param glow: glow model
+    :param glow: conditional glow model
     :param optimizer: glow optimizer
     :param loss_fn: loss function
     :param grad_norm_clip: clipping gradient
@@ -410,7 +411,7 @@ def test_cglow(data_loader: DataLoader,
     """
     Test cGlow
     :param data_loader: testing data loader
-    :param glow: glow model
+    :param glow: conditional glow model
     :param epoch: current epoch
     :param num_of_epochs: number of total epochs
     :param evaluator: evaluator
@@ -451,21 +452,36 @@ def test_cglow(data_loader: DataLoader,
 def train_and_inference_celeb(train_dataset: CelebALoader,
                               train_loader: DataLoader,
                               learning_rate_nf: float,
+                              image_size: int,
                               width: int,
                               depth: int,
                               num_levels: int,
                               num_classes: int,
                               grad_norm_clip: float,
                               epochs: int,
-                              training_device: device):
-    """"""
+                              training_device: device) -> None:
+    """
+    Train and inference cGlow
+    :param train_dataset: training dataset
+    :param train_loader: training data loader
+    :param learning_rate_nf: learning rate of normalizing flow
+    :param image_size: image size (noise size)
+    :param width: dimension of the hidden layers in normalizing flow
+    :param depth: depth of the normalizing flow
+    :param num_levels: number of levels in normalizing flow
+    :param num_classes: number of different conditions
+    :param grad_norm_clip: clip gradients during training
+    :param epochs: number of total epochs
+    :param training_device: training device
+    :return: None
+    """
     # Setup average losses container
     losses = [0.0 for _ in range(epochs)]
 
     # Setup models
     info_log('Setup models ...')
-    glow = CGlow(num_channels=width, num_levels=num_levels, num_steps=depth, num_classes=num_classes).to(
-        training_device)
+    glow = CGlow(num_channels=width, num_levels=num_levels, num_steps=depth, num_classes=num_classes,
+                 image_size=image_size).to(training_device)
     optimizer = optim.Adam(glow.parameters(), lr=learning_rate_nf)
     loss_fn = NLLLoss().to(training_device)
 
@@ -498,8 +514,15 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
 def inference_celeb(train_dataset: CelebALoader,
                     glow: CGlow,
                     num_classes: int,
-                    training_device: device):
-    """"""
+                    training_device: device) -> None:
+    """
+    Use cGlow to inference celebrity data with 3 applications
+    :param train_dataset: training dataset
+    :param glow: conditional glow model
+    :param num_classes: number of classes (attributes)
+    :param training_device: training device
+    :return: None
+    """
     glow.eval()
 
     # Application 1
@@ -689,6 +712,7 @@ def main() -> None:
                                      test_loader=test_loader,
                                      evaluator=evaluator,
                                      learning_rate_nf=learning_rate_nf,
+                                     image_size=image_size,
                                      width=width,
                                      depth=depth,
                                      num_levels=num_levels,
@@ -700,6 +724,7 @@ def main() -> None:
         train_and_inference_celeb(train_dataset=train_dataset,
                                   train_loader=train_loader,
                                   learning_rate_nf=learning_rate_nf,
+                                  image_size=image_size,
                                   width=width,
                                   depth=depth,
                                   num_levels=num_levels,
