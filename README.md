@@ -13,3 +13,4 @@
 |Lab 4|ResNet|
 |Lab 5|CVAE with LSTM|
 |Lab 6|DQN & DDPG|
+|Lab 7|cGAN & cNF|
