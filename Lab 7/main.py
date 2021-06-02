@@ -1,8 +1,5 @@
-from task_1_model import Generator, Discriminator
+from task_1_model import Generator, Discriminator, cGlow, NLLLoss
 from task_1_dataset import ICLEVRLoader
-# from task_2_model import Glow
-from task_2_test_model import CondGlowModel
-from task_2_test_2_model import Glow, NLLLoss
 from evaluator import EvaluationModel
 from argument_parser import parse_arguments
 from visualizer import plot_losses, plot_accuracies
@@ -316,17 +313,7 @@ def train_and_evaluate_glow(train_dataset: ICLEVRLoader,
 
     # Setup models
     info_log('Setup models ...')
-    # glow = Glow(width=width, depth=depth, n_levels=num_levels).to(training_device)
-    # glow = CondGlowModel(x_size=(3, image_size, image_size),
-    #                      y_size=(3, image_size, image_size),
-    #                      x_hidden_channels=128,
-    #                      x_hidden_size=64,
-    #                      y_hidden_channels=256,
-    #                      flow_depth=depth,
-    #                      num_levels=num_levels,
-    #                      learn_top=False,
-    #                      y_bins=2.0).to(training_device)
-    glow = Glow(num_channels=width, num_levels=num_levels, num_steps=depth).to(training_device)
+    glow = cGlow(num_channels=width, num_levels=num_levels, num_steps=depth).to(training_device)
     optimizer = optim.Adam(glow.parameters(), lr=learning_rate_nf)
     loss_fn = NLLLoss().to(training_device)
 
@@ -364,7 +351,7 @@ def train_and_evaluate_glow(train_dataset: ICLEVRLoader,
 
 
 def train_glow(data_loader: DataLoader,
-               glow: Glow,
+               glow: cGlow,
                optimizer: optim,
                loss_fn: NLLLoss,
                grad_norm_clip: float,
@@ -409,7 +396,7 @@ def train_glow(data_loader: DataLoader,
 
 
 def test_glow(data_loader: DataLoader,
-              glow: Glow,
+              glow: cGlow,
               epoch: int,
               num_of_epochs: int,
               evaluator: EvaluationModel,
@@ -432,11 +419,6 @@ def test_glow(data_loader: DataLoader,
         labels = labels.to(training_device).type(torch.float)
         batch_size = len(labels)
 
-        # sample, _ = glow.inverse(batch_size=batch_size)
-        # sample = sample[:, :3, :, :]
-        # log_prob = glow.log_prob(sample, labels, bits_per_pixel=True)
-        # # sort by log_prob; flip high (left) to low (right)
-        # fake_images = sample[log_prob.argsort().flip(0)]
         z = torch.randn((batch_size, 3, 64, 64), dtype=torch.float, device=training_device)
         fake_images, _ = glow(z, labels, reverse=True)
         fake_images = torch.sigmoid(fake_images)
