@@ -1,5 +1,7 @@
-from task_1_model import Generator, Discriminator, cGlow, NLLLoss
+from gan import Generator, Discriminator
 from task_1_dataset import ICLEVRLoader
+from normalizing_flow import CGlow, NLLLoss
+from task_2_dataset import CelebALoader
 from evaluator import EvaluationModel
 from argument_parser import parse_arguments
 from visualizer import plot_losses, plot_accuracies
@@ -41,18 +43,18 @@ def debug_log(log: str) -> None:
         sys.stdout.flush()
 
 
-def train_and_evaluate_dcgan(train_dataset: ICLEVRLoader,
-                             train_loader: DataLoader,
-                             test_loader: DataLoader,
-                             evaluator: EvaluationModel,
-                             learning_rate_g: float,
-                             learning_rate_d: float,
-                             image_size: int,
-                             num_classes: int,
-                             epochs: int,
-                             training_device: device) -> None:
+def train_and_evaluate_cdcgan(train_dataset: ICLEVRLoader,
+                              train_loader: DataLoader,
+                              test_loader: DataLoader,
+                              evaluator: EvaluationModel,
+                              learning_rate_g: float,
+                              learning_rate_d: float,
+                              image_size: int,
+                              num_classes: int,
+                              epochs: int,
+                              training_device: device) -> None:
     """
-    Train and test DCGAN
+    Train and test cDCGAN
     :param train_dataset: training dataset
     :param train_loader: training data loader
     :param test_loader: testing data loader
@@ -81,30 +83,30 @@ def train_and_evaluate_dcgan(train_dataset: ICLEVRLoader,
     info_log('Start training')
     for epoch in range(epochs):
         # Train
-        total_g_loss, total_d_loss = train_dcgan(data_loader=train_loader,
-                                                 generator=generator,
-                                                 discriminator=discriminator,
-                                                 optimizer_g=optimizer_g,
-                                                 optimizer_d=optimizer_d,
-                                                 image_size=image_size,
-                                                 num_classes=num_classes,
-                                                 epoch=epoch,
-                                                 num_of_epochs=epochs,
-                                                 training_device=training_device)
+        total_g_loss, total_d_loss = train_cdcgan(data_loader=train_loader,
+                                                  generator=generator,
+                                                  discriminator=discriminator,
+                                                  optimizer_g=optimizer_g,
+                                                  optimizer_d=optimizer_d,
+                                                  image_size=image_size,
+                                                  num_classes=num_classes,
+                                                  epoch=epoch,
+                                                  num_of_epochs=epochs,
+                                                  training_device=training_device)
         generator_losses[epoch] = total_g_loss / len(train_dataset)
         discriminator_losses[epoch] = total_d_loss / len(train_dataset)
         print(f'[{epoch + 1}/{epochs}] Average generator loss: {generator_losses[epoch]}')
         print(f'[{epoch + 1}/{epochs}] Average discriminator loss: {discriminator_losses[epoch]}')
 
         # Test
-        generated_image, total_accuracy = test_dcgan(data_loader=test_loader,
-                                                     generator=generator,
-                                                     image_size=image_size,
-                                                     num_classes=num_classes,
-                                                     epoch=epoch,
-                                                     num_of_epochs=epochs,
-                                                     evaluator=evaluator,
-                                                     training_device=training_device)
+        generated_image, total_accuracy = test_cdcgan(data_loader=test_loader,
+                                                      generator=generator,
+                                                      image_size=image_size,
+                                                      num_classes=num_classes,
+                                                      epoch=epoch,
+                                                      num_of_epochs=epochs,
+                                                      evaluator=evaluator,
+                                                      training_device=training_device)
         accuracies[epoch] = total_accuracy / len(test_loader)
         save_image(make_grid(generated_image, nrow=8), f'test_figure/{epoch}.jpg')
         print(f'[{epoch + 1}/{epochs}] Average accuracy: {accuracies[epoch]:.2f}')
@@ -120,18 +122,18 @@ def train_and_evaluate_dcgan(train_dataset: ICLEVRLoader,
     plt.close()
 
 
-def train_dcgan(data_loader: DataLoader,
-                generator: Generator,
-                discriminator: Discriminator,
-                optimizer_g: optim,
-                optimizer_d: optim,
-                image_size: int,
-                num_classes: int,
-                epoch: int,
-                num_of_epochs: int,
-                training_device: device) -> Tuple[float, float]:
+def train_cdcgan(data_loader: DataLoader,
+                 generator: Generator,
+                 discriminator: Discriminator,
+                 optimizer_g: optim,
+                 optimizer_d: optim,
+                 image_size: int,
+                 num_classes: int,
+                 epoch: int,
+                 num_of_epochs: int,
+                 training_device: device) -> Tuple[float, float]:
     """
-    Train the DCGAN
+    Train the cDCGAN
     :param data_loader: train data loader
     :param generator: generator
     :param discriminator: discriminator
@@ -224,16 +226,16 @@ def train_dcgan(data_loader: DataLoader,
     return total_g_loss, total_d_loss
 
 
-def test_dcgan(data_loader: DataLoader,
-               generator: Generator,
-               image_size: int,
-               num_classes: int,
-               epoch: int,
-               num_of_epochs: int,
-               evaluator: EvaluationModel,
-               training_device: device) -> Tuple[torch.Tensor, float]:
+def test_cdcgan(data_loader: DataLoader,
+                generator: Generator,
+                image_size: int,
+                num_classes: int,
+                epoch: int,
+                num_of_epochs: int,
+                evaluator: EvaluationModel,
+                training_device: device) -> Tuple[torch.Tensor, float]:
     """
-    Test the model
+    Test the cDCGAN
     :param data_loader: test data loader
     :param generator: generator
     :param image_size: image size (noise size)
@@ -279,29 +281,29 @@ def test_dcgan(data_loader: DataLoader,
     return norm_image, total_accuracy
 
 
-def train_and_evaluate_glow(train_dataset: ICLEVRLoader,
-                            train_loader: DataLoader,
-                            test_loader: DataLoader,
-                            evaluator: EvaluationModel,
-                            learning_rate_nf: float,
-                            image_size: int,
-                            width: int,
-                            depth: int,
-                            num_levels: int,
-                            grad_norm_clip: float,
-                            epochs: int,
-                            training_device: device) -> None:
+def train_and_evaluate_cglow(train_dataset: ICLEVRLoader,
+                             train_loader: DataLoader,
+                             test_loader: DataLoader,
+                             evaluator: EvaluationModel,
+                             learning_rate_nf: float,
+                             width: int,
+                             depth: int,
+                             num_levels: int,
+                             num_classes: int,
+                             grad_norm_clip: float,
+                             epochs: int,
+                             training_device: device) -> None:
     """
-    Train and test Glow
+    Train and test cGlow
     :param train_dataset: training dataset
     :param train_loader: training data loader
     :param test_loader: testing data loader
     :param evaluator: evaluator
     :param learning_rate_nf: learning rate of normalizing flow
-    :param image_size: image size (noise size)
     :param width: dimension of the hidden layers in normalizing flow
     :param depth: depth of the normalizing flow
     :param num_levels: number of levels in normalizing flow
+    :param num_classes: number of different conditions
     :param grad_norm_clip: clip gradients during training
     :param epochs: number of total epochs
     :param training_device: training device
@@ -313,7 +315,7 @@ def train_and_evaluate_glow(train_dataset: ICLEVRLoader,
 
     # Setup models
     info_log('Setup models ...')
-    glow = cGlow(num_channels=width, num_levels=num_levels, num_steps=depth).to(training_device)
+    glow = CGlow(num_channels=width, num_levels=num_levels, num_steps=depth, num_classes=num_classes).to(training_device)
     optimizer = optim.Adam(glow.parameters(), lr=learning_rate_nf)
     loss_fn = NLLLoss().to(training_device)
 
@@ -321,24 +323,24 @@ def train_and_evaluate_glow(train_dataset: ICLEVRLoader,
     info_log('Start training')
     for epoch in range(epochs):
         # Train
-        total_loss = train_glow(data_loader=train_loader,
-                                glow=glow,
-                                optimizer=optimizer,
-                                loss_fn=loss_fn,
-                                grad_norm_clip=grad_norm_clip,
-                                epoch=epoch,
-                                num_of_epochs=epochs,
-                                training_device=training_device)
+        total_loss = train_cglow(data_loader=train_loader,
+                                 glow=glow,
+                                 optimizer=optimizer,
+                                 loss_fn=loss_fn,
+                                 grad_norm_clip=grad_norm_clip,
+                                 epoch=epoch,
+                                 num_of_epochs=epochs,
+                                 training_device=training_device)
         losses[epoch] = total_loss / len(train_dataset)
         print(f'[{epoch + 1}/{epochs}] Average loss: {losses[epoch]}')
 
         # Test
-        generated_image, total_accuracy = test_glow(data_loader=test_loader,
-                                                    glow=glow,
-                                                    epoch=epoch,
-                                                    num_of_epochs=epochs,
-                                                    evaluator=evaluator,
-                                                    training_device=training_device)
+        generated_image, total_accuracy = test_cglow(data_loader=test_loader,
+                                                     glow=glow,
+                                                     epoch=epoch,
+                                                     num_of_epochs=epochs,
+                                                     evaluator=evaluator,
+                                                     training_device=training_device)
         accuracies[epoch] = total_accuracy / len(test_loader)
         save_image(make_grid(generated_image, nrow=8), f'test_figure/{epoch}.jpg')
         print(f'[{epoch + 1}/{epochs}] Average accuracy: {accuracies[epoch]:.2f}')
@@ -350,16 +352,16 @@ def train_and_evaluate_glow(train_dataset: ICLEVRLoader,
     plt.close()
 
 
-def train_glow(data_loader: DataLoader,
-               glow: cGlow,
-               optimizer: optim,
-               loss_fn: NLLLoss,
-               grad_norm_clip: float,
-               epoch: int,
-               num_of_epochs: int,
-               training_device: device) -> float:
+def train_cglow(data_loader: DataLoader,
+                glow: CGlow,
+                optimizer: optim,
+                loss_fn: NLLLoss,
+                grad_norm_clip: float,
+                epoch: int,
+                num_of_epochs: int,
+                training_device: device) -> float:
     """
-    Train Glow
+    Train cGlow
     :param data_loader: training data loader
     :param glow: glow model
     :param optimizer: glow optimizer
@@ -377,7 +379,6 @@ def train_glow(data_loader: DataLoader,
         images = images.to(training_device)
         labels = labels.to(training_device).type(torch.float)
 
-        # loss = -glow.log_prob(images, labels, bits_per_pixel=True).mean(0)
         z, nll = glow(images, labels)
         loss = loss_fn(z, nll)
         total_loss += loss.data.cpu().item()
@@ -390,19 +391,20 @@ def train_glow(data_loader: DataLoader,
 
         optimizer.step()
 
-        debug_log(f'[{epoch + 1}/{num_of_epochs}][{batch_idx + 1}/{len(data_loader)}]   Loss: {loss}')
+        if batch_idx % 50 == 0:
+            debug_log(f'[{epoch + 1}/{num_of_epochs}][{batch_idx + 1}/{len(data_loader)}]   Loss: {loss}')
 
     return total_loss
 
 
-def test_glow(data_loader: DataLoader,
-              glow: cGlow,
-              epoch: int,
-              num_of_epochs: int,
-              evaluator: EvaluationModel,
-              training_device: device) -> Tuple[torch.Tensor, float]:
+def test_cglow(data_loader: DataLoader,
+               glow: CGlow,
+               epoch: int,
+               num_of_epochs: int,
+               evaluator: EvaluationModel,
+               training_device: device) -> Tuple[torch.Tensor, float]:
     """
-    Test Glow
+    Test cGlow
     :param data_loader: testing data loader
     :param glow: glow model
     :param epoch: current epoch
@@ -440,6 +442,48 @@ def test_glow(data_loader: DataLoader,
         debug_log(f'[{epoch + 1}/{num_of_epochs}][{batch_idx + 1}/{len(data_loader)}]   Accuracy: {acc}')
 
     return generated_image, total_accuracy
+
+
+def train_and_inference_celeb(train_dataset: CelebALoader,
+                              train_loader: DataLoader,
+                              learning_rate_nf: float,
+                              width: int,
+                              depth: int,
+                              num_levels: int,
+                              num_classes: int,
+                              grad_norm_clip: float,
+                              epochs: int,
+                              training_device: device):
+    """"""
+    # Setup average losses container
+    losses = [0.0 for _ in range(epochs)]
+
+    # Setup models
+    info_log('Setup models ...')
+    glow = CGlow(num_channels=width, num_levels=num_levels, num_steps=depth, num_classes=num_classes).to(training_device)
+    optimizer = optim.Adam(glow.parameters(), lr=learning_rate_nf)
+    loss_fn = NLLLoss().to(training_device)
+
+    # Start training
+    info_log('Start training')
+    for epoch in range(epochs):
+        # Train
+        total_loss = train_cglow(data_loader=train_loader,
+                                 glow=glow,
+                                 optimizer=optimizer,
+                                 loss_fn=loss_fn,
+                                 grad_norm_clip=grad_norm_clip,
+                                 epoch=epoch,
+                                 num_of_epochs=epochs,
+                                 training_device=training_device)
+        losses[epoch] = total_loss / len(train_dataset)
+        print(f'[{epoch + 1}/{epochs}] Average loss: {losses[epoch]}')
+
+
+def inference_celeb():
+    """"""
+    # TODO
+    pass
 
 
 def main() -> None:
@@ -494,12 +538,17 @@ def main() -> None:
                                              transforms.RandomHorizontalFlip(),
                                              transforms.Resize((image_size, image_size)),
                                              transforms.ToTensor()])
-    # TODO: control data for different task
-    train_dataset = ICLEVRLoader(root_folder='data/task_1/', trans=transformation, mode='train')
-    test_dataset = ICLEVRLoader(root_folder='data/task_1/', mode='test')
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
-    num_classes = train_dataset.num_classes
+
+    if task == 1:
+        train_dataset = ICLEVRLoader(root_folder='data/task_1/', trans=transformation, mode='train')
+        test_dataset = ICLEVRLoader(root_folder='data/task_1/', mode='test')
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+        num_classes = train_dataset.num_classes
+    else:
+        train_dataset = CelebALoader(root_folder='data/task_2/', trans=transformation)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        num_classes = train_dataset.num_classes
 
     # Setup evaluator
     evaluator = EvaluationModel(training_device=training_device)
@@ -514,29 +563,40 @@ def main() -> None:
 
     if task == 1:
         if model == 'gan':
-            train_and_evaluate_dcgan(train_dataset=train_dataset,
+            train_and_evaluate_cdcgan(train_dataset=train_dataset,
+                                      train_loader=train_loader,
+                                      test_loader=test_loader,
+                                      evaluator=evaluator,
+                                      learning_rate_g=learning_rate_g,
+                                      learning_rate_d=learning_rate_d,
+                                      image_size=image_size,
+                                      num_classes=num_classes,
+                                      epochs=epochs,
+                                      training_device=training_device)
+        else:
+            train_and_evaluate_cglow(train_dataset=train_dataset,
                                      train_loader=train_loader,
                                      test_loader=test_loader,
                                      evaluator=evaluator,
-                                     learning_rate_g=learning_rate_g,
-                                     learning_rate_d=learning_rate_d,
-                                     image_size=image_size,
+                                     learning_rate_nf=learning_rate_nf,
+                                     width=width,
+                                     depth=depth,
+                                     num_levels=num_levels,
                                      num_classes=num_classes,
+                                     grad_norm_clip=grad_norm_clip,
                                      epochs=epochs,
                                      training_device=training_device)
-        else:
-            train_and_evaluate_glow(train_dataset=train_dataset,
-                                    train_loader=train_loader,
-                                    test_loader=test_loader,
-                                    evaluator=evaluator,
-                                    learning_rate_nf=learning_rate_nf,
-                                    image_size=image_size,
-                                    width=width,
-                                    depth=depth,
-                                    num_levels=num_levels,
-                                    grad_norm_clip=grad_norm_clip,
-                                    epochs=epochs,
-                                    training_device=training_device)
+    else:
+        train_and_inference_celeb(train_dataset=train_dataset,
+                                  train_loader=train_loader,
+                                  learning_rate_nf=learning_rate_nf,
+                                  width=width,
+                                  depth=depth,
+                                  num_levels=num_levels,
+                                  num_classes=num_classes,
+                                  grad_norm_clip=grad_norm_clip,
+                                  epochs=epochs,
+                                  training_device=training_device)
 
 
 if __name__ == '__main__':
