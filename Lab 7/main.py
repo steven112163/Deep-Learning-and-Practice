@@ -381,7 +381,7 @@ def train_cglow(data_loader: DataLoader,
     for batch_idx, batch_data in enumerate(data_loader):
         images, labels = batch_data
         images = images.to(training_device)
-        labels = labels.to(training_device).type(torch.long)
+        labels = labels.to(training_device).type(torch.float)
 
         z, nll = glow(images, labels)
         loss = loss_fn(z, nll)
@@ -422,7 +422,7 @@ def test_cglow(data_loader: DataLoader,
     generated_image = torch.randn(0, 3, 64, 64)
     for batch_idx, batch_data in enumerate(data_loader):
         labels = batch_data
-        labels = labels.to(training_device).type(torch.long)
+        labels = labels.to(training_device).type(torch.float)
         batch_size = len(labels)
 
         z = torch.randn((batch_size, 3, 64, 64), dtype=torch.float, device=training_device)
@@ -474,7 +474,7 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
     for idx in range(32):
         _, label = train_dataset[idx]
         labels = torch.cat([labels, torch.from_numpy(label).view(1, -1)], 0)
-    labels = labels.to(training_device).type(torch.long)
+    labels = labels.to(training_device).type(torch.float)
 
     # Start training
     info_log('Start training')
