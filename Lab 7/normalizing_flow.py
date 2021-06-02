@@ -232,7 +232,13 @@ class CGlow(nn.Module):
                             num_levels=num_levels,
                             num_steps=num_steps)
         self.mode = mode
-        self.label_to_condition = nn.Linear(num_classes, 64 * 64, bias=True)
+        self.label_to_condition = nn.Sequential(
+            nn.Linear(in_features=num_classes, out_features=16 * 16, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_features=16 * 16, out_features=32 * 32, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_features=32 * 32, out_features=64 * 64)
+        )
 
     def forward(self, x, x_cond, reverse=False):
         x_cond = self.label_to_condition(x_cond).view(-1, 1, 64, 64)

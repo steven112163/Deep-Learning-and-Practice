@@ -469,13 +469,6 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
     optimizer = optim.Adam(glow.parameters(), lr=learning_rate_nf)
     loss_fn = NLLLoss().to(training_device)
 
-    # Get labels for inference
-    labels = torch.rand(0, num_classes)
-    for idx in range(32):
-        _, label = train_dataset[idx]
-        labels = torch.cat([labels, torch.from_numpy(label).view(1, -1)], 0)
-    labels = labels.to(training_device).type(torch.float)
-
     # Start training
     info_log('Start training')
     for epoch in range(epochs):
@@ -491,8 +484,9 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
         losses[epoch] = total_loss / len(train_dataset)
         print(f'[{epoch + 1}/{epochs}] Average loss: {losses[epoch]}')
 
-        inference_celeb(glow=glow,
-                        labels=labels,
+        inference_celeb(train_dataset=train_dataset,
+                        glow=glow,
+                        num_classes=num_classes,
                         training_device=training_device)
 
     # Plot losses
@@ -501,21 +495,96 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
     plt.close()
 
 
-def inference_celeb(glow: CGlow,
-                    labels: torch.Tensor,
+def inference_celeb(train_dataset: CelebALoader,
+                    glow: CGlow,
+                    num_classes: int,
                     training_device: device):
     """"""
+    glow.eval()
+
     # Application 1
+    # Get labels for inference
+    debug_log(f'Perform app 1')
+    labels = torch.rand(0, num_classes)
+    for idx in range(32):
+        _, label = train_dataset[idx]
+        labels = torch.cat([labels, torch.from_numpy(label).view(1, 40)], 0)
+    labels = labels.to(training_device).type(torch.float)
+
+    # Generate random latent code
     z = torch.randn((32, 3, 64, 64), dtype=torch.float, device=training_device)
 
+    # Produce fake images
     fake_images, _ = glow(z, labels, reverse=True)
     fake_images = torch.sigmoid(fake_images)
 
-    generated_image = torch.randn(0, 3, 64, 64)
+    # Save fake images for application 1
+    generated_images = torch.randn(0, 3, 64, 64)
     for fake_image in fake_images:
         n_image = fake_image.cpu().detach()
-        generated_image = torch.cat([generated_image, n_image.view(1, 3, 64, 64)], 0)
-    save_image(make_grid(generated_image, nrow=8), f'figure/task_2/app_1.jpg')
+        generated_images = torch.cat([generated_images, n_image.view(1, 3, 64, 64)], 0)
+    save_image(make_grid(generated_images, nrow=8), f'figure/task_2/app_1.jpg')
+
+    # Application 2
+    # Get 2 images to perform linear interpolation
+    debug_log(f'Perform app 2')
+    linear_images = torch.randn(0, 3, 64, 64)
+    for idx in range(5):
+        # Get first image and label
+        first_image, first_label = train_dataset[idx]
+        first_image = first_image.to(training_device).type(torch.float).view(1, 3, 64, 64)
+        first_label = torch.from_numpy(first_label).to(training_device).type(torch.float).view(1, 40)
+
+        # Get second image and label
+        second_image, second_label = train_dataset[idx + 5]
+        second_image = second_image.to(training_device).type(torch.float).view(1, 3, 64, 64)
+        second_label = torch.from_numpy(second_label).to(training_device).type(torch.float).view(1, 40)
+
+        # Generate latent code
+        first_z, _ = glow(first_image, first_label)
+        second_z, _ = glow(second_image, second_label)
+
+        # Compute interval
+        interval_z = (second_z - first_z) / 8.0
+        interval_label = (second_label - first_label) / 8.0
+
+        # Generate linear images
+        for num_of_intervals in range(9):
+            image, _ = glow(first_z + num_of_intervals * interval_z,
+                            first_label + num_of_intervals * interval_label,
+                            reverse=True)
+            image = torch.sigmoid(image)
+            linear_images = torch.cat([linear_images, image.cpu().detach().view(1, 3, 64, 64)], 0)
+    save_image(make_grid(linear_images, nrow=9), f'figure/task_2/app_2.jpg')
+
+    # Application 3
+    # Get a image and labels with negative/positive smiling
+    debug_log(f'Perform app 3')
+    image, _ = train_dataset[1]
+    neg_smile_label = -torch.ones((1, 40))
+    pos_smile_label = -torch.ones((1, 40))
+    pos_smile_label[0, 31] = 1
+    image = image.to(training_device).type(torch.float).view(1, 3, 64, 64)
+    neg_smile_label = neg_smile_label.to(training_device).type(torch.float).view(1, 40)
+    pos_smile_label = pos_smile_label.to(training_device).type(torch.float).view(1, 40)
+
+    # Generate latent code
+    neg_z, _ = glow(image, neg_smile_label)
+    pos_z, _ = glow(image, pos_smile_label)
+
+    # Compute interval
+    interval_z = (pos_z - neg_z) / 4.0
+    interval_label = (pos_smile_label - neg_smile_label) / 4.0
+
+    # Generate manipulated images
+    manipulated_images = torch.randn(0, 3, 64, 64)
+    for num_of_intervals in range(5):
+        image, _ = glow(neg_z + num_of_intervals * interval_z,
+                        neg_smile_label + num_of_intervals * interval_label,
+                        reverse=True)
+        image = torch.sigmoid(image)
+        manipulated_images = torch.cat([manipulated_images, image.cpu().detach().view(1, 3, 64, 64)], 0)
+    save_image(make_grid(manipulated_images, nrow=5), f'figure/task_2/app_3.jpg')
 
 
 def main() -> None:
