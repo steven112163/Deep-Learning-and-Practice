@@ -112,12 +112,12 @@ def train_and_evaluate_cdcgan(train_dataset: ICLEVRLoader,
         print(f'[{epoch + 1}/{epochs}] Average accuracy: {accuracies[epoch]:.2f}')
 
         if epoch % 10 == 0:
-            torch.save(generator, f'model/{epoch}_{accuracies[epoch]:.4f}_g.pt')
-            torch.save(discriminator, f'model/{epoch}_{accuracies[epoch]:.4f}_d.pt')
+            torch.save(generator, f'model/task_1/{epoch}_{accuracies[epoch]:.4f}_g.pt')
+            torch.save(discriminator, f'model/task_2/{epoch}_{accuracies[epoch]:.4f}_d.pt')
 
     # Plot losses and accuracies
     info_log('Plot losses and accuracies ...')
-    plot_losses(losses=(generator_losses, discriminator_losses), labels=['Generator', 'Discriminator'])
+    plot_losses(losses=(generator_losses, discriminator_losses), labels=['Generator', 'Discriminator'], task='task_1')
     plot_accuracies(accuracies=accuracies)
     plt.close()
 
@@ -315,7 +315,8 @@ def train_and_evaluate_cglow(train_dataset: ICLEVRLoader,
 
     # Setup models
     info_log('Setup models ...')
-    glow = CGlow(num_channels=width, num_levels=num_levels, num_steps=depth, num_classes=num_classes).to(training_device)
+    glow = CGlow(num_channels=width, num_levels=num_levels, num_steps=depth, num_classes=num_classes).to(
+        training_device)
     optimizer = optim.Adam(glow.parameters(), lr=learning_rate_nf)
     loss_fn = NLLLoss().to(training_device)
 
@@ -345,9 +346,12 @@ def train_and_evaluate_cglow(train_dataset: ICLEVRLoader,
         save_image(make_grid(generated_image, nrow=8), f'test_figure/{epoch}.jpg')
         print(f'[{epoch + 1}/{epochs}] Average accuracy: {accuracies[epoch]:.2f}')
 
+        if epoch % 10 == 0:
+            torch.save(glow, f'model/task_1/{epoch}_{accuracies[epoch]:.4f}.pt')
+
     # Plot losses and accuracies
     info_log('Plot losses and accuracies ...')
-    plot_losses(losses=(losses,), labels=['loss'])
+    plot_losses(losses=(losses,), labels=['loss'], task='task_1')
     plot_accuracies(accuracies=accuracies)
     plt.close()
 
@@ -460,9 +464,16 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
 
     # Setup models
     info_log('Setup models ...')
-    glow = CGlow(num_channels=width, num_levels=num_levels, num_steps=depth, num_classes=num_classes).to(training_device)
+    glow = CGlow(num_channels=width, num_levels=num_levels, num_steps=depth, num_classes=num_classes).to(
+        training_device)
     optimizer = optim.Adam(glow.parameters(), lr=learning_rate_nf)
     loss_fn = NLLLoss().to(training_device)
+
+    # Get labels for inference
+    labels = torch.rand(0, num_classes)
+    for idx in range(32):
+        _, label = train_dataset[idx]
+        labels = torch.cat([labels, torch.from_numpy(label).view(1, -1)], 0)
 
     # Start training
     info_log('Start training')
@@ -479,11 +490,31 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
         losses[epoch] = total_loss / len(train_dataset)
         print(f'[{epoch + 1}/{epochs}] Average loss: {losses[epoch]}')
 
+        inference_celeb(glow=glow,
+                        labels=labels,
+                        training_device=training_device)
 
-def inference_celeb():
+    # Plot losses
+    info_log('Plot losses ...')
+    plot_losses(losses=(losses,), labels=['loss'], task='task_2')
+    plt.close()
+
+
+def inference_celeb(glow: CGlow,
+                    labels: torch.Tensor,
+                    training_device: device):
     """"""
-    # TODO
-    pass
+    # Application 1
+    z = torch.randn((32, 3, 64, 64), dtype=torch.float, device=training_device)
+
+    fake_images, _ = glow(z, labels, reverse=True)
+    fake_images = torch.sigmoid(fake_images)
+
+    generated_image = torch.randn(0, 3, 64, 64)
+    for fake_image in fake_images:
+        n_image = fake_image.cpu().detach()
+        generated_image = torch.cat([generated_image, n_image.view(1, 3, 64, 64)], 0)
+    save_image(make_grid(generated_image, nrow=8), f'figure/task_2/app_1.jpg')
 
 
 def main() -> None:
@@ -534,10 +565,15 @@ def main() -> None:
                                              transforms.ToTensor(),
                                              transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
     else:
-        transformation = transforms.Compose([transforms.RandomCrop(240),
-                                             transforms.RandomHorizontalFlip(),
-                                             transforms.Resize((image_size, image_size)),
-                                             transforms.ToTensor()])
+        if task == 1:
+            transformation = transforms.Compose([transforms.RandomCrop(240),
+                                                 transforms.RandomHorizontalFlip(),
+                                                 transforms.Resize((image_size, image_size)),
+                                                 transforms.ToTensor()])
+        else:
+            transformation = transforms.Compose([transforms.RandomHorizontalFlip(),
+                                                 transforms.Resize((image_size, image_size)),
+                                                 transforms.ToTensor()])
 
     if task == 1:
         train_dataset = ICLEVRLoader(root_folder='data/task_1/', trans=transformation, mode='train')
@@ -554,12 +590,16 @@ def main() -> None:
     evaluator = EvaluationModel(training_device=training_device)
 
     # Create directories
-    if not os.path.exists('./model'):
-        os.mkdir('./model')
+    if not os.path.exists('./model/task_1'):
+        os.makedirs('./model/task_1')
+    if not os.path.exists('./model/task_2'):
+        os.makedirs('./model/task_2')
     if not os.path.exists('./test_figure'):
         os.mkdir('./test_figure')
-    if not os.path.exists('./figure'):
-        os.mkdir('./figure')
+    if not os.path.exists('./figure/task_1'):
+        os.makedirs('./figure/task_1')
+    if not os.path.exists('./figure/task_2'):
+        os.makedirs('./figure/task_2')
 
     if task == 1:
         if model == 'gan':
