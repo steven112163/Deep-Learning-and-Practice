@@ -9,7 +9,7 @@ def check_task_type(input_value: str) -> int:
     """
     int_value = int(input_value)
     if int_value != 1 and int_value != 2:
-        raise ArgumentTypeError(f'Verbosity should be 1 or 2.')
+        raise ArgumentTypeError(f'Task should be 1 or 2.')
     return int_value
 
 
@@ -22,6 +22,17 @@ def check_model_type(input_value: str) -> str:
     if input_value != 'gan' and input_value != 'nf':
         raise ArgumentTypeError(f'Model should be "gan" or "nf"')
     return input_value
+
+def check_inference_type(input_value: str) -> int:
+    """
+    Check whether inference is true or false
+    :param input_value: input string value
+    :return: integer value
+    """
+    int_value = int(input_value)
+    if int_value != 0 and int_value != 1:
+        raise ArgumentTypeError(f'Inference should be 0 or 1.')
+    return int_value
 
 
 def check_verbosity_type(input_value: str) -> int:
@@ -58,6 +69,7 @@ def parse_arguments() -> Namespace:
     parser.add_argument('-e', '--epochs', default=200, type=int, help='Number of epochs')
     parser.add_argument('-t', '--task', default=1, type=check_task_type, help='Task 1 or task 2')
     parser.add_argument('-m', '--model', default=0, type=check_model_type, help='cGAN or cNF')
+    parser.add_argument('-inf', '--inference', default=0, type=check_inference_type, help='Only infer or not')
     parser.add_argument('-v', '--verbosity', default=0, type=check_verbosity_type, help='Verbosity level')
 
     return parser.parse_args()

@@ -19,4 +19,5 @@
 |`'-e', '--epochs'`|Number of epochs|
 |`'-t', '--task'`|Task 1 or task 2|1|
 |`'-m', '--model'`|cGAN or cNF|0|
+|`'-inf', '--inference'`|Only infer or not|0|
 |`'-v', '--verbosity'`|Verbosity level|0|

@@ -52,6 +52,7 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
                             image_size: int,
                             num_classes: int,
                             epochs: int,
+                            inference: int,
                             training_device: device) -> None:
     """
     Train and test cGAN
@@ -64,6 +65,7 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
     :param image_size: image size (noise size)
     :param num_classes: number of classes (object IDs)
     :param epochs: number of epochs
+    :param inference: only infer or not
     :param training_device: training device
     :return: None
     """
@@ -73,6 +75,10 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
     # discriminator = DCDiscriminator(image_size=image_size).to(training_device)
     generator = SAGenerator(z_dim=image_size, g_conv_dim=image_size // 2, num_classes=num_classes).to(training_device)
     discriminator = SADiscriminator(d_conv_dim=image_size // 2, num_classes=num_classes).to(training_device)
+    if os.path.exists('model/task_1/cgan_generator.pt'):
+        generator.load_state_dict(torch.load('model/task_1/cgan_generator.pt'))
+    if os.path.exists('model/task_1/cgan_discriminator.pt'):
+        discriminator.load_state_dict(torch.load('model/task_1/cgan_discriminator.pt'))
     optimizer_g = optim.Adam(generator.parameters(), lr=learning_rate_g)
     optimizer_d = optim.Adam(discriminator.parameters(), lr=learning_rate_d)
 
@@ -81,47 +87,65 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
     discriminator_losses = [0.0 for _ in range(epochs)]
     accuracies = [0.0 for _ in range(epochs)]
 
-    # Start training
-    info_log('Start training')
-    for epoch in range(epochs):
-        # Train
-        total_g_loss, total_d_loss = train_cgan(data_loader=train_loader,
-                                                generator=generator,
-                                                discriminator=discriminator,
-                                                optimizer_g=optimizer_g,
-                                                optimizer_d=optimizer_d,
-                                                image_size=image_size,
-                                                num_classes=num_classes,
-                                                epoch=epoch,
-                                                num_of_epochs=epochs,
-                                                training_device=training_device)
-        generator_losses[epoch] = total_g_loss / len(train_dataset)
-        discriminator_losses[epoch] = total_d_loss / len(train_dataset)
-        print(f'[{epoch + 1}/{epochs}] Average generator loss: {generator_losses[epoch]}')
-        print(f'[{epoch + 1}/{epochs}] Average discriminator loss: {discriminator_losses[epoch]}')
-
-        # Test
-        generated_image, total_accuracy = test_cgan(data_loader=test_loader,
+    if not inference:
+        # Start training
+        info_log('Start training')
+        for epoch in range(epochs):
+            # Train
+            total_g_loss, total_d_loss = train_cgan(data_loader=train_loader,
                                                     generator=generator,
+                                                    discriminator=discriminator,
+                                                    optimizer_g=optimizer_g,
+                                                    optimizer_d=optimizer_d,
                                                     image_size=image_size,
                                                     num_classes=num_classes,
                                                     epoch=epoch,
                                                     num_of_epochs=epochs,
+                                                    training_device=training_device)
+            generator_losses[epoch] = total_g_loss / len(train_dataset)
+            discriminator_losses[epoch] = total_d_loss / len(train_dataset)
+            print(f'[{epoch + 1}/{epochs}] Average generator loss: {generator_losses[epoch]}')
+            print(f'[{epoch + 1}/{epochs}] Average discriminator loss: {discriminator_losses[epoch]}')
+
+            # Test
+            generated_image, total_accuracy = test_cgan(data_loader=test_loader,
+                                                        generator=generator,
+                                                        image_size=image_size,
+                                                        num_classes=num_classes,
+                                                        epoch=epoch,
+                                                        num_of_epochs=epochs,
+                                                        evaluator=evaluator,
+                                                        training_device=training_device)
+            accuracies[epoch] = total_accuracy / len(test_loader)
+            save_image(make_grid(generated_image, nrow=8), f'test_figure/{epoch}.jpg')
+            print(f'[{epoch + 1}/{epochs}] Average accuracy: {accuracies[epoch]:.2f}')
+
+            if epoch % 10 == 0:
+                torch.save(generator, f'model/task_1/{epoch}_{accuracies[epoch]:.4f}_g.pt')
+                torch.save(discriminator, f'model/task_1/{epoch}_{accuracies[epoch]:.4f}_d.pt')
+        torch.save(generator, f'model/task_1/max_{max(accuracies):.4f}_g.pt')
+        torch.save(discriminator, f'model/task_1/max_{max(accuracies):.4f}_d.pt')
+
+        # Plot losses and accuracies
+        info_log('Plot losses and accuracies ...')
+        plot_losses(losses=(generator_losses, discriminator_losses), labels=['Generator', 'Discriminator'],
+                    task='task_1')
+        plot_accuracies(accuracies=accuracies)
+        plt.close()
+    else:
+        # Start inferring
+        info_log('Start inferring')
+        generated_image, total_accuracy = test_cgan(data_loader=test_loader,
+                                                    generator=generator,
+                                                    image_size=image_size,
+                                                    num_classes=num_classes,
+                                                    epoch=0,
+                                                    num_of_epochs=1,
                                                     evaluator=evaluator,
                                                     training_device=training_device)
-        accuracies[epoch] = total_accuracy / len(test_loader)
-        save_image(make_grid(generated_image, nrow=8), f'test_figure/{epoch}.jpg')
-        print(f'[{epoch + 1}/{epochs}] Average accuracy: {accuracies[epoch]:.2f}')
-
-        if epoch % 10 == 0:
-            torch.save(generator, f'model/task_1/{epoch}_{accuracies[epoch]:.4f}_g.pt')
-            torch.save(discriminator, f'model/task_2/{epoch}_{accuracies[epoch]:.4f}_d.pt')
-
-    # Plot losses and accuracies
-    info_log('Plot losses and accuracies ...')
-    plot_losses(losses=(generator_losses, discriminator_losses), labels=['Generator', 'Discriminator'], task='task_1')
-    plot_accuracies(accuracies=accuracies)
-    plt.close()
+        total_accuracy /= len(test_loader)
+        save_image(make_grid(generated_image, nrow=8), f'figure/task_1/cgan.png')
+        print(f'Average accuracy: {total_accuracy:.2f}')
 
 
 def train_cgan(data_loader: DataLoader,
@@ -322,9 +346,10 @@ def train_and_evaluate_cglow(train_dataset: ICLEVRLoader,
                              num_classes: int,
                              grad_norm_clip: float,
                              epochs: int,
+                             inference: int,
                              training_device: device) -> None:
     """
-    Train and test cGlow
+    Train and test cNF
     :param train_dataset: training dataset
     :param train_loader: training data loader
     :param test_loader: testing data loader
@@ -337,6 +362,7 @@ def train_and_evaluate_cglow(train_dataset: ICLEVRLoader,
     :param num_classes: number of different conditions
     :param grad_norm_clip: clip gradients during training
     :param epochs: number of total epochs
+    :param inference: only infer or not
     :param training_device: training device
     :return: None
     """
@@ -348,43 +374,59 @@ def train_and_evaluate_cglow(train_dataset: ICLEVRLoader,
     info_log('Setup models ...')
     glow = CGlow(num_channels=width, num_levels=num_levels, num_steps=depth, num_classes=num_classes,
                  image_size=image_size).to(training_device)
+    if os.path.exists('model/task_1/cglow.pt'):
+        glow.load_state_dict(torch.load('/model/task_1/cglow.pt'))
     optimizer = optim.Adam(glow.parameters(), lr=learning_rate_nf)
     loss_fn = NLLLoss().to(training_device)
 
-    # Start training
-    info_log('Start training')
-    for epoch in range(epochs):
-        # Train
-        total_loss = train_cglow(data_loader=train_loader,
-                                 glow=glow,
-                                 optimizer=optimizer,
-                                 loss_fn=loss_fn,
-                                 grad_norm_clip=grad_norm_clip,
-                                 epoch=epoch,
-                                 num_of_epochs=epochs,
-                                 training_device=training_device)
-        losses[epoch] = total_loss / len(train_dataset)
-        print(f'[{epoch + 1}/{epochs}] Average loss: {losses[epoch]}')
+    if not inference:
+        # Start training
+        info_log('Start training')
+        for epoch in range(epochs):
+            # Train
+            total_loss = train_cglow(data_loader=train_loader,
+                                     glow=glow,
+                                     optimizer=optimizer,
+                                     loss_fn=loss_fn,
+                                     grad_norm_clip=grad_norm_clip,
+                                     epoch=epoch,
+                                     num_of_epochs=epochs,
+                                     training_device=training_device)
+            losses[epoch] = total_loss / len(train_dataset)
+            print(f'[{epoch + 1}/{epochs}] Average loss: {losses[epoch]}')
 
-        # Test
+            # Test
+            generated_image, total_accuracy = test_cglow(data_loader=test_loader,
+                                                         glow=glow,
+                                                         epoch=epoch,
+                                                         num_of_epochs=epochs,
+                                                         evaluator=evaluator,
+                                                         training_device=training_device)
+            accuracies[epoch] = total_accuracy / len(test_loader)
+            save_image(make_grid(generated_image, nrow=8), f'test_figure/{epoch}.jpg')
+            print(f'[{epoch + 1}/{epochs}] Average accuracy: {accuracies[epoch]:.2f}')
+
+            if epoch % 10 == 0:
+                torch.save(glow, f'model/task_1/{epoch}_{accuracies[epoch]:.4f}_cglow.pt')
+        torch.save(glow, f'model/task_1/max_{max(accuracies):.4f}_cglow.pt')
+
+        # Plot losses and accuracies
+        info_log('Plot losses and accuracies ...')
+        plot_losses(losses=(losses,), labels=['loss'], task='task_1')
+        plot_accuracies(accuracies=accuracies)
+        plt.close()
+    else:
+        # Start inferring
+        info_log('Start inferring')
         generated_image, total_accuracy = test_cglow(data_loader=test_loader,
                                                      glow=glow,
-                                                     epoch=epoch,
-                                                     num_of_epochs=epochs,
+                                                     epoch=0,
+                                                     num_of_epochs=1,
                                                      evaluator=evaluator,
                                                      training_device=training_device)
-        accuracies[epoch] = total_accuracy / len(test_loader)
-        save_image(make_grid(generated_image, nrow=8), f'test_figure/{epoch}.jpg')
-        print(f'[{epoch + 1}/{epochs}] Average accuracy: {accuracies[epoch]:.2f}')
-
-        if epoch % 10 == 0:
-            torch.save(glow, f'model/task_1/{epoch}_{accuracies[epoch]:.4f}.pt')
-
-    # Plot losses and accuracies
-    info_log('Plot losses and accuracies ...')
-    plot_losses(losses=(losses,), labels=['loss'], task='task_1')
-    plot_accuracies(accuracies=accuracies)
-    plt.close()
+        total_accuracy /= len(test_loader)
+        save_image(make_grid(generated_image, nrow=8), f'figure/task_1/cglow.png')
+        print(f'Average accuracy: {total_accuracy:.2f}')
 
 
 def train_cglow(data_loader: DataLoader,
@@ -489,6 +531,7 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
                               num_classes: int,
                               grad_norm_clip: float,
                               epochs: int,
+                              inference: int,
                               training_device: device) -> None:
     """
     Train and inference cGlow
@@ -502,6 +545,7 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
     :param num_classes: number of different conditions
     :param grad_norm_clip: clip gradients during training
     :param epochs: number of total epochs
+    :param inference: only infer or not
     :param training_device: training device
     :return: None
     """
@@ -512,33 +556,47 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
     info_log('Setup models ...')
     glow = CGlow(num_channels=width, num_levels=num_levels, num_steps=depth, num_classes=num_classes,
                  image_size=image_size).to(training_device)
+    if os.path.exists('model/task_2/cglow.pt'):
+        glow.load_state_dict(torch.load('/model/task_2/cglow.pt'))
     optimizer = optim.Adam(glow.parameters(), lr=learning_rate_nf)
     loss_fn = NLLLoss().to(training_device)
 
-    # Start training
-    info_log('Start training')
-    for epoch in range(epochs):
-        # Train
-        total_loss = train_cglow(data_loader=train_loader,
-                                 glow=glow,
-                                 optimizer=optimizer,
-                                 loss_fn=loss_fn,
-                                 grad_norm_clip=grad_norm_clip,
-                                 epoch=epoch,
-                                 num_of_epochs=epochs,
-                                 training_device=training_device)
-        losses[epoch] = total_loss / len(train_dataset)
-        print(f'[{epoch + 1}/{epochs}] Average loss: {losses[epoch]}')
+    if not inference:
+        # Start training
+        info_log('Start training')
+        for epoch in range(epochs):
+            # Train
+            total_loss = train_cglow(data_loader=train_loader,
+                                     glow=glow,
+                                     optimizer=optimizer,
+                                     loss_fn=loss_fn,
+                                     grad_norm_clip=grad_norm_clip,
+                                     epoch=epoch,
+                                     num_of_epochs=epochs,
+                                     training_device=training_device)
+            losses[epoch] = total_loss / len(train_dataset)
+            print(f'[{epoch + 1}/{epochs}] Average loss: {losses[epoch]}')
 
+            inference_celeb(train_dataset=train_dataset,
+                            glow=glow,
+                            num_classes=num_classes,
+                            training_device=training_device)
+
+            if epoch % 10 == 0:
+                torch.save(glow, f'model/task_2/{epoch}_{losses[epoch]:.4f}.pt')
+        torch.save(glow, f'model/task_2/min_{min(losses):.4f}.pt')
+
+        # Plot losses
+        info_log('Plot losses ...')
+        plot_losses(losses=(losses,), labels=['loss'], task='task_2')
+        plt.close()
+    else:
+        # Start inferring
+        info_log('Start inferring')
         inference_celeb(train_dataset=train_dataset,
                         glow=glow,
                         num_classes=num_classes,
                         training_device=training_device)
-
-    # Plot losses
-    info_log('Plot losses ...')
-    plot_losses(losses=(losses,), labels=['loss'], task='task_2')
-    plt.close()
 
 
 def inference_celeb(train_dataset: CelebALoader,
@@ -662,6 +720,7 @@ def main() -> None:
     epochs = args.epochs
     task = args.task
     model = args.model
+    inference = args.inference
     global verbosity
     verbosity = args.verbosity
     info_log(f'Batch size: {batch_size}')
@@ -676,6 +735,7 @@ def main() -> None:
     info_log(f'Number of epochs: {epochs}')
     info_log(f'Perform task: {task}')
     info_log(f'Which model will be used: {model}')
+    info_log(f'Only inference or not: {True if inference else False}')
     info_log(f'Training device: {training_device}')
 
     # Read data
@@ -735,6 +795,7 @@ def main() -> None:
                                     image_size=image_size,
                                     num_classes=num_classes,
                                     epochs=epochs,
+                                    inference=inference,
                                     training_device=training_device)
         else:
             train_and_evaluate_cglow(train_dataset=train_dataset,
@@ -749,6 +810,7 @@ def main() -> None:
                                      num_classes=num_classes,
                                      grad_norm_clip=grad_norm_clip,
                                      epochs=epochs,
+                                     inference=inference,
                                      training_device=training_device)
     else:
         train_and_inference_celeb(train_dataset=train_dataset,
@@ -761,6 +823,7 @@ def main() -> None:
                                   num_classes=num_classes,
                                   grad_norm_clip=grad_norm_clip,
                                   epochs=epochs,
+                                  inference=inference,
                                   training_device=training_device)
 
 
