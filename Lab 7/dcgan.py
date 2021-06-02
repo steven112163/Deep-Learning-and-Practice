@@ -2,9 +2,9 @@ import torch.nn as nn
 import torch
 
 
-class Generator(nn.Module):
+class DCGenerator(nn.Module):
     def __init__(self, noise_size: int):
-        super(Generator, self).__init__()
+        super(DCGenerator, self).__init__()
 
         self.net = nn.Sequential(
             nn.ConvTranspose2d(in_channels=noise_size,
@@ -56,9 +56,9 @@ class Generator(nn.Module):
         return self.net(x)
 
 
-class Discriminator(nn.Module):
+class DCDiscriminator(nn.Module):
     def __init__(self, image_size: int):
-        super(Discriminator, self).__init__()
+        super(DCDiscriminator, self).__init__()
 
         self.net = nn.Sequential(
             nn.Conv2d(in_channels=4,

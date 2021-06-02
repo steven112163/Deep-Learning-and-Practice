@@ -1,4 +1,5 @@
-from gan import Generator, Discriminator
+from dcgan import DCGenerator, DCDiscriminator
+from sagan import SAGenerator, SADiscriminator
 from task_1_dataset import ICLEVRLoader
 from normalizing_flow import CGlow, NLLLoss
 from task_2_dataset import CelebALoader
@@ -9,7 +10,7 @@ from torch.utils.data import DataLoader
 from torchvision.transforms import transforms
 from torchvision.utils import save_image, make_grid
 from torch import device, cuda
-from typing import Tuple
+from typing import Tuple, Optional
 import matplotlib.pyplot as plt
 import torch.optim as optim
 import torch.nn as nn
@@ -42,18 +43,18 @@ def debug_log(log: str) -> None:
         sys.stdout.flush()
 
 
-def train_and_evaluate_cdcgan(train_dataset: ICLEVRLoader,
-                              train_loader: DataLoader,
-                              test_loader: DataLoader,
-                              evaluator: EvaluationModel,
-                              learning_rate_g: float,
-                              learning_rate_d: float,
-                              image_size: int,
-                              num_classes: int,
-                              epochs: int,
-                              training_device: device) -> None:
+def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
+                            train_loader: DataLoader,
+                            test_loader: DataLoader,
+                            evaluator: EvaluationModel,
+                            learning_rate_g: float,
+                            learning_rate_d: float,
+                            image_size: int,
+                            num_classes: int,
+                            epochs: int,
+                            training_device: device) -> None:
     """
-    Train and test cDCGAN
+    Train and test cGAN
     :param train_dataset: training dataset
     :param train_loader: training data loader
     :param test_loader: testing data loader
@@ -68,8 +69,10 @@ def train_and_evaluate_cdcgan(train_dataset: ICLEVRLoader,
     """
     # Setup models
     info_log('Setup models ...')
-    generator = Generator(noise_size=image_size).to(training_device)
-    discriminator = Discriminator(image_size=image_size).to(training_device)
+    # generator = DCGenerator(noise_size=image_size).to(training_device)
+    # discriminator = DCDiscriminator(image_size=image_size).to(training_device)
+    generator = SAGenerator(z_dim=image_size, g_conv_dim=image_size // 2, num_classes=num_classes).to(training_device)
+    discriminator = SADiscriminator(d_conv_dim=image_size // 2, num_classes=num_classes).to(training_device)
     optimizer_g = optim.Adam(generator.parameters(), lr=learning_rate_g)
     optimizer_d = optim.Adam(discriminator.parameters(), lr=learning_rate_d)
 
@@ -82,30 +85,30 @@ def train_and_evaluate_cdcgan(train_dataset: ICLEVRLoader,
     info_log('Start training')
     for epoch in range(epochs):
         # Train
-        total_g_loss, total_d_loss = train_cdcgan(data_loader=train_loader,
-                                                  generator=generator,
-                                                  discriminator=discriminator,
-                                                  optimizer_g=optimizer_g,
-                                                  optimizer_d=optimizer_d,
-                                                  image_size=image_size,
-                                                  num_classes=num_classes,
-                                                  epoch=epoch,
-                                                  num_of_epochs=epochs,
-                                                  training_device=training_device)
+        total_g_loss, total_d_loss = train_cgan(data_loader=train_loader,
+                                                generator=generator,
+                                                discriminator=discriminator,
+                                                optimizer_g=optimizer_g,
+                                                optimizer_d=optimizer_d,
+                                                image_size=image_size,
+                                                num_classes=num_classes,
+                                                epoch=epoch,
+                                                num_of_epochs=epochs,
+                                                training_device=training_device)
         generator_losses[epoch] = total_g_loss / len(train_dataset)
         discriminator_losses[epoch] = total_d_loss / len(train_dataset)
         print(f'[{epoch + 1}/{epochs}] Average generator loss: {generator_losses[epoch]}')
         print(f'[{epoch + 1}/{epochs}] Average discriminator loss: {discriminator_losses[epoch]}')
 
         # Test
-        generated_image, total_accuracy = test_cdcgan(data_loader=test_loader,
-                                                      generator=generator,
-                                                      image_size=image_size,
-                                                      num_classes=num_classes,
-                                                      epoch=epoch,
-                                                      num_of_epochs=epochs,
-                                                      evaluator=evaluator,
-                                                      training_device=training_device)
+        generated_image, total_accuracy = test_cgan(data_loader=test_loader,
+                                                    generator=generator,
+                                                    image_size=image_size,
+                                                    num_classes=num_classes,
+                                                    epoch=epoch,
+                                                    num_of_epochs=epochs,
+                                                    evaluator=evaluator,
+                                                    training_device=training_device)
         accuracies[epoch] = total_accuracy / len(test_loader)
         save_image(make_grid(generated_image, nrow=8), f'test_figure/{epoch}.jpg')
         print(f'[{epoch + 1}/{epochs}] Average accuracy: {accuracies[epoch]:.2f}')
@@ -121,18 +124,18 @@ def train_and_evaluate_cdcgan(train_dataset: ICLEVRLoader,
     plt.close()
 
 
-def train_cdcgan(data_loader: DataLoader,
-                 generator: Generator,
-                 discriminator: Discriminator,
-                 optimizer_g: optim,
-                 optimizer_d: optim,
-                 image_size: int,
-                 num_classes: int,
-                 epoch: int,
-                 num_of_epochs: int,
-                 training_device: device) -> Tuple[float, float]:
+def train_cgan(data_loader: DataLoader,
+               generator: Optional[DCGenerator or SAGenerator],
+               discriminator: Optional[DCDiscriminator or SADiscriminator],
+               optimizer_g: optim,
+               optimizer_d: optim,
+               image_size: int,
+               num_classes: int,
+               epoch: int,
+               num_of_epochs: int,
+               training_device: device) -> Tuple[float, float]:
     """
-    Train the cDCGAN
+    Train the cGAN
     :param data_loader: train data loader
     :param generator: generator
     :param discriminator: discriminator
@@ -151,7 +154,10 @@ def train_cdcgan(data_loader: DataLoader,
     total_d_loss = 0.0
     for batch_idx, batch_data in enumerate(data_loader):
         images, real_labels = batch_data
-        real_labels = real_labels.to(training_device).type(torch.float)
+        # DCGAN
+        # real_labels = real_labels.to(training_device).type(torch.float)
+        # SAGAN
+        real_labels = real_labels.to(training_device).type(torch.long)
 
         ############################
         # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
@@ -170,26 +176,38 @@ def train_cdcgan(data_loader: DataLoader,
 
         # Calculate loss on all-real batch
         optimizer_d.zero_grad()
-        loss_d_real = nn.BCELoss()(outputs, labels)
+        # DCGAN
+        # loss_d_real = nn.BCELoss()(outputs, labels)
+        # SAGAN with WGAN-hinge
+        loss_d_real = nn.ReLU()(1.0 - outputs).mean()
         loss_d_real.backward()
 
         # Train with all-fake batch
         # Generate batch of latent vectors
-        noise = torch.cat([
-            torch.randn(batch_size, image_size - num_classes),
-            real_labels.cpu()
-        ], 1).view(-1, image_size, 1, 1).to(training_device)
+        # DCGAN
+        # noise = torch.cat([
+        #     torch.randn(batch_size, image_size - num_classes),
+        #     real_labels.cpu()
+        # ], 1).view(-1, image_size, 1, 1).to(training_device)
+        # SAGAN
+        noise = torch.randn((batch_size, image_size)).to(training_device)
         labels = torch.full((batch_size, 1), 0.0, dtype=torch.float, device=training_device)
 
         # Generate fake image batch with generator
-        fake_outputs = generator.forward(noise)
+        # DCGAN
+        # fake_outputs = generator.forward(noise)
+        # SAGAN
+        fake_outputs = generator.forward(noise, real_labels)
 
         # Forward pass fake batch through discriminator
         outputs = discriminator.forward(fake_outputs.detach(), real_labels)
         d_g_z1 = outputs.mean().item()
 
         # Calculate loss on fake batch
-        loss_d_fake = nn.BCELoss()(outputs, labels)
+        # DCGAN
+        # loss_d_fake = nn.BCELoss()(outputs, labels)
+        # SAGAN with WGAN-hinge
+        loss_d_fake = torch.nn.ReLU()(1.0 + outputs).mean()
         loss_d_fake.backward()
         optimizer_d.step()
 
@@ -208,7 +226,10 @@ def train_cdcgan(data_loader: DataLoader,
         labels = torch.full((batch_size, 1), 1.0, dtype=torch.float, device=training_device)
 
         # Calculate generator's loss based on this output
-        loss_g = nn.BCELoss()(outputs, labels)
+        # DCGAN
+        # loss_g = nn.BCELoss()(outputs, labels)
+        # SAGAN with WGAN-hinge
+        loss_g = -outputs.mean()
         total_g_loss += loss_g.item()
 
         # Calculate gradients for generator and update
@@ -225,16 +246,16 @@ def train_cdcgan(data_loader: DataLoader,
     return total_g_loss, total_d_loss
 
 
-def test_cdcgan(data_loader: DataLoader,
-                generator: Generator,
-                image_size: int,
-                num_classes: int,
-                epoch: int,
-                num_of_epochs: int,
-                evaluator: EvaluationModel,
-                training_device: device) -> Tuple[torch.Tensor, float]:
+def test_cgan(data_loader: DataLoader,
+              generator: Optional[DCGenerator or SAGenerator],
+              image_size: int,
+              num_classes: int,
+              epoch: int,
+              num_of_epochs: int,
+              evaluator: EvaluationModel,
+              training_device: device) -> Tuple[torch.Tensor, float]:
     """
-    Test the cDCGAN
+    Test the cGAN
     :param data_loader: test data loader
     :param generator: generator
     :param image_size: image size (noise size)
@@ -249,17 +270,26 @@ def test_cdcgan(data_loader: DataLoader,
     norm_image = torch.randn(0, 3, 64, 64)
     for batch_idx, batch_data in enumerate(data_loader):
         labels = batch_data
-        labels = labels.to(training_device).type(torch.float)
+        # DCGAN
+        # labels = labels.to(training_device).type(torch.float)
+        # SAGAN
+        labels = labels.to(training_device).type(torch.long)
         batch_size = len(labels)
 
         # Generate batch of latent vectors
-        noise = torch.cat([
-            torch.randn(batch_size, image_size - num_classes),
-            labels.cpu()
-        ], 1).view(-1, image_size, 1, 1).to(training_device)
+        # DCGAN
+        # noise = torch.cat([
+        #     torch.randn(batch_size, image_size - num_classes),
+        #     labels.cpu()
+        # ], 1).view(-1, image_size, 1, 1).to(training_device)
+        # SAGAN
+        noise = torch.randn((batch_size, image_size)).to(training_device)
 
         # Generate fake image batch with generator
-        fake_outputs = generator.forward(noise)
+        # DCGAN
+        # fake_outputs = generator.forward(noise)
+        # SAGAN
+        fake_outputs = generator.forward(noise, labels)
 
         # Compute accuracy
         acc = evaluator.eval(fake_outputs, labels)
@@ -696,16 +726,16 @@ def main() -> None:
 
     if task == 1:
         if model == 'gan':
-            train_and_evaluate_cdcgan(train_dataset=train_dataset,
-                                      train_loader=train_loader,
-                                      test_loader=test_loader,
-                                      evaluator=evaluator,
-                                      learning_rate_g=learning_rate_g,
-                                      learning_rate_d=learning_rate_d,
-                                      image_size=image_size,
-                                      num_classes=num_classes,
-                                      epochs=epochs,
-                                      training_device=training_device)
+            train_and_evaluate_cgan(train_dataset=train_dataset,
+                                    train_loader=train_loader,
+                                    test_loader=test_loader,
+                                    evaluator=evaluator,
+                                    learning_rate_g=learning_rate_g,
+                                    learning_rate_d=learning_rate_d,
+                                    image_size=image_size,
+                                    num_classes=num_classes,
+                                    epochs=epochs,
+                                    training_device=training_device)
         else:
             train_and_evaluate_cglow(train_dataset=train_dataset,
                                      train_loader=train_loader,
