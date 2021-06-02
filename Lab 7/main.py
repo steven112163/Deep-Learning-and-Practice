@@ -560,13 +560,13 @@ def inference_celeb(train_dataset: CelebALoader,
     # Application 3
     # Get a image and labels with negative/positive smiling
     debug_log(f'Perform app 3')
-    image, _ = train_dataset[1]
-    neg_smile_label = -torch.ones((1, 40))
-    pos_smile_label = -torch.ones((1, 40))
-    pos_smile_label[0, 31] = 1
+    image, label = train_dataset[1]
     image = image.to(training_device).type(torch.float).view(1, 3, 64, 64)
-    neg_smile_label = neg_smile_label.to(training_device).type(torch.float).view(1, 40)
-    pos_smile_label = pos_smile_label.to(training_device).type(torch.float).view(1, 40)
+    label = torch.from_numpy(label).to(training_device).type(torch.float).view(1, 40)
+    neg_smile_label = torch.clone(label)
+    neg_smile_label[0, 31] = -1.
+    pos_smile_label = torch.clone(label)
+    pos_smile_label[0, 31] = 1.
 
     # Generate latent code
     neg_z, _ = glow(image, neg_smile_label)
