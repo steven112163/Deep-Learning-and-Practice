@@ -23,9 +23,9 @@ class ResidualBlock(nn.Module):
         return x + residual
 
 
-class UpsampleBLock(nn.Module):
+class UpsampleBlock(nn.Module):
     def __init__(self, in_channels, up_scale):
-        super(UpsampleBLock, self).__init__()
+        super(UpsampleBlock, self).__init__()
         self.conv = nn.Conv2d(in_channels, in_channels * up_scale ** 2, kernel_size=3, padding=1)
         self.pixel_shuffle = nn.PixelShuffle(up_scale)
         self.prelu = nn.PReLU()
@@ -58,7 +58,7 @@ class SRGenerator(nn.Module):
             nn.Conv2d(64, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64)
         )
-        block8 = [UpsampleBLock(64, 2) for _ in range(upsample_block_num)]
+        block8 = [UpsampleBlock(64, 2) for _ in range(upsample_block_num)]
         block8 += [nn.Conv2d(64, 3, kernel_size=9, padding=4)]
         self.block8 = nn.Sequential(*block8)
 
