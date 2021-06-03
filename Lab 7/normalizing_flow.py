@@ -232,16 +232,22 @@ class CGlow(nn.Module):
                             num_levels=num_levels,
                             num_steps=num_steps)
         self.mode = mode
+        self.image_size = image_size
         self.label_to_condition = nn.Sequential(
-            nn.Linear(in_features=num_classes, out_features=16 * 16, bias=False),
+            nn.Linear(in_features=num_classes,
+                      out_features=16 * 16,
+                      bias=False),
             nn.ReLU(inplace=True),
-            nn.Linear(in_features=16 * 16, out_features=32 * 32, bias=False),
+            nn.Linear(in_features=16 * 16,
+                      out_features=32 * 32,
+                      bias=False),
             nn.ReLU(inplace=True),
-            nn.Linear(in_features=32 * 32, out_features=image_size * image_size)
+            nn.Linear(in_features=32 * 32,
+                      out_features=image_size * image_size)
         )
 
     def forward(self, x, x_cond, reverse=False):
-        x_cond = self.label_to_condition(x_cond).view(-1, 1, 64, 64)
+        x_cond = self.label_to_condition(x_cond).view(-1, 1, self.image_size, self.image_size)
         if reverse:
             sldj = torch.zeros(x.size(0), device=x.device)
         else:

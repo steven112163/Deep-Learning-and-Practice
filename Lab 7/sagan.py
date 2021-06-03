@@ -151,18 +151,21 @@ class SAGenerator(nn.Module):
 
     def forward(self, z, labels):
         # n x z_dim
-        act0 = self.snlinear0(z)  # n x g_conv_dim*16*2*2
-        act0 = act0.view(-1, self.g_conv_dim * 16, 2, 2)  # n x g_conv_dim*16 x 2 x 2
-        act1 = self.block1(act0, labels)  # n x g_conv_dim*16 x 4 x 4
-        act2 = self.block2(act1, labels)  # n x g_conv_dim*8 x 8 x 8
-        act3 = self.block3(act2, labels)  # n x g_conv_dim*4 x 16 x 16
-        act3 = self.self_attn(act3)  # n x g_conv_dim*4 x 16 x 16
-        act4 = self.block4(act3, labels)  # n x g_conv_dim*2 x 32 x 32
-        act5 = self.block5(act4, labels)  # n x g_conv_dim  x 64 x 64
-        act5 = self.bn(act5)  # n x g_conv_dim  x 64 x 64
-        act5 = self.relu(act5)  # n x g_conv_dim  x 64 x 64
-        act6 = self.snconv2d1(act5)  # n x 3 x 64 x 64
-        act6 = self.tanh(act6)  # n x 3 x 64 x 64
+        act0 = self.snlinear0(z)  # n x g_conv_dim*16*(z_dim // 32)*(z_dim // 32)
+        act0 = act0.view(-1,
+                         self.g_conv_dim * 16,
+                         (self.z_dim // 32),
+                         (self.z_dim // 32))  # n x g_conv_dim*16 x (z_dim // 32) x (z_dim // 32)
+        act1 = self.block1(act0, labels)  # n x g_conv_dim*16 x (z_dim // 16) x (z_dim // 16)
+        act2 = self.block2(act1, labels)  # n x g_conv_dim*8 x (z_dim // 8) x (z_dim // 8)
+        act3 = self.block3(act2, labels)  # n x g_conv_dim*4 x (z_dim // 4) x (z_dim // 4)
+        act3 = self.self_attn(act3)  # n x g_conv_dim*4 x (z_dim // 4) x (z_dim // 4)
+        act4 = self.block4(act3, labels)  # n x g_conv_dim*2 x (z_dim // 2) x (z_dim // 2)
+        act5 = self.block5(act4, labels)  # n x g_conv_dim  x z_dim x z_dim
+        act5 = self.bn(act5)  # n x g_conv_dim  x z_dim x z_dim
+        act5 = self.relu(act5)  # n x g_conv_dim  x z_dim x z_dim
+        act6 = self.snconv2d1(act5)  # n x 3 x z_dim x z_dim
+        act6 = self.tanh(act6)  # n x 3 x z_dim x z_dim
         return act6
 
 

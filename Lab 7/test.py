@@ -33,7 +33,7 @@ def test_cgan(data_loader: DataLoader,
     """
     generator.eval()
     total_accuracy = 0.0
-    norm_image = torch.randn(0, 3, 64, 64)
+    norm_image = torch.randn(0, 3, args.image_size, args.image_size)
     for batch_idx, batch_data in enumerate(data_loader):
         labels = batch_data
         batch_size = len(labels)
@@ -78,7 +78,7 @@ def test_cgan(data_loader: DataLoader,
                                              ])
         for fake_image in fake_outputs:
             n_image = transformation(fake_image.cpu().detach())
-            norm_image = torch.cat([norm_image, n_image.view(1, 3, 64, 64)], 0)
+            norm_image = torch.cat([norm_image, n_image.view(1, 3, args.image_size, args.image_size)], 0)
 
         debug_log(f'[{epoch + 1}/{args.epochs}][{batch_idx + 1}/{len(data_loader)}]   Accuracy: {acc}', args.verbosity)
 
@@ -103,21 +103,22 @@ def test_cnf(data_loader: DataLoader,
     """
     normalizing_flow.eval()
     total_accuracy = 0.0
-    generated_image = torch.randn(0, 3, 64, 64)
+    generated_image = torch.randn(0, 3, args.image_size, args.image_size)
     for batch_idx, batch_data in enumerate(data_loader):
         labels = batch_data
         labels = labels.to(training_device).type(torch.float)
         batch_size = len(labels)
 
-        z = torch.randn((batch_size, 3, 64, 64), dtype=torch.float, device=training_device)
+        z = torch.randn((batch_size, 3, args.image_size, args.image_size), dtype=torch.float, device=training_device)
         fake_images, _ = normalizing_flow(z, labels, reverse=True)
         fake_images = torch.sigmoid(fake_images)
 
-        transformed_images = torch.randn(0, 3, 64, 64)
+        transformed_images = torch.randn(0, 3, args.image_size, args.image_size)
         transformation = transforms.Compose([transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
         for fake_image in fake_images:
             n_image = fake_image.cpu().detach()
-            transformed_images = torch.cat([transformed_images, transformation(n_image).view(1, 3, 64, 64)], 0)
+            transformed_images = torch.cat([transformed_images,
+                                            transformation(n_image).view(1, 3, args.image_size, args.image_size)], 0)
         transformed_images = transformed_images.to(training_device)
 
         acc = evaluator.eval(transformed_images, labels)
@@ -125,7 +126,7 @@ def test_cnf(data_loader: DataLoader,
 
         for fake_image in fake_images:
             n_image = fake_image.cpu().detach()
-            generated_image = torch.cat([generated_image, n_image.view(1, 3, 64, 64)], 0)
+            generated_image = torch.cat([generated_image, n_image.view(1, 3, args.image_size, args.image_size)], 0)
 
         debug_log(f'[{epoch + 1}/{args.epochs}][{batch_idx + 1}/{len(data_loader)}]   Accuracy: {acc}', args.verbosity)
 
@@ -158,32 +159,32 @@ def inference_celeb(train_dataset: CelebALoader,
     labels = labels.to(training_device).type(torch.float)
 
     # Generate random latent code
-    z = torch.randn((32, 3, 64, 64), dtype=torch.float, device=training_device)
+    z = torch.randn((32, 3, args.image_size, args.image_size), dtype=torch.float, device=training_device)
 
     # Produce fake images
     fake_images, _ = normalizing_flow(z, labels, reverse=True)
     fake_images = torch.sigmoid(fake_images)
 
     # Save fake images for application 1
-    generated_images = torch.randn(0, 3, 64, 64)
+    generated_images = torch.randn(0, 3, args.image_size, args.image_size)
     for fake_image in fake_images:
         n_image = fake_image.cpu().detach()
-        generated_images = torch.cat([generated_images, n_image.view(1, 3, 64, 64)], 0)
+        generated_images = torch.cat([generated_images, n_image.view(1, 3, args.image_size, args.image_size)], 0)
     save_image(make_grid(generated_images, nrow=8), f'figure/task_2/{args.model}_app_1.jpg')
 
     # Application 2
     # Get 2 images to perform linear interpolation
     debug_log(f'Perform app 2', args.verbosity)
-    linear_images = torch.randn(0, 3, 64, 64)
+    linear_images = torch.randn(0, 3, args.image_size, args.image_size)
     for idx in range(5):
         # Get first image and label
         first_image, first_label = train_dataset[idx]
-        first_image = first_image.to(training_device).type(torch.float).view(1, 3, 64, 64)
+        first_image = first_image.to(training_device).type(torch.float).view(1, 3, args.image_size, args.image_size)
         first_label = torch.from_numpy(first_label).to(training_device).type(torch.float).view(1, 40)
 
         # Get second image and label
         second_image, second_label = train_dataset[idx + 5]
-        second_image = second_image.to(training_device).type(torch.float).view(1, 3, 64, 64)
+        second_image = second_image.to(training_device).type(torch.float).view(1, 3, args.image_size, args.image_size)
         second_label = torch.from_numpy(second_label).to(training_device).type(torch.float).view(1, 40)
 
         # Generate latent code
@@ -200,14 +201,15 @@ def inference_celeb(train_dataset: CelebALoader,
                                         first_label + num_of_intervals * interval_label,
                                         reverse=True)
             image = torch.sigmoid(image)
-            linear_images = torch.cat([linear_images, image.cpu().detach().view(1, 3, 64, 64)], 0)
+            linear_images = torch.cat([linear_images,
+                                       image.cpu().detach().view(1, 3, args.image_size, args.image_size)], 0)
     save_image(make_grid(linear_images, nrow=9), f'figure/task_2/{args.model}_app_2.jpg')
 
     # Application 3
     # Get a image and labels with negative/positive smiling
     debug_log(f'Perform app 3', args.verbosity)
     image, label = train_dataset[1]
-    image = image.to(training_device).type(torch.float).view(1, 3, 64, 64)
+    image = image.to(training_device).type(torch.float).view(1, 3, args.image_size, args.image_size)
     label = torch.from_numpy(label).to(training_device).type(torch.float).view(1, 40)
     neg_label = torch.clone(label)
     neg_label[0, 4] = -1.
@@ -225,11 +227,12 @@ def inference_celeb(train_dataset: CelebALoader,
     interval_label = (pos_label - neg_label) / 10.0
 
     # Generate manipulated images
-    manipulated_images = torch.randn(0, 3, 64, 64)
+    manipulated_images = torch.randn(0, 3, args.image_size, args.image_size)
     for num_of_intervals in range(11):
         image, _ = normalizing_flow(neg_z + num_of_intervals * interval_z,
                                     neg_label + num_of_intervals * interval_label,
                                     reverse=True)
         image = torch.sigmoid(image)
-        manipulated_images = torch.cat([manipulated_images, image.cpu().detach().view(1, 3, 64, 64)], 0)
+        manipulated_images = torch.cat([manipulated_images,
+                                        image.cpu().detach().view(1, 3, args.image_size, args.image_size)], 0)
     save_image(make_grid(manipulated_images, nrow=10), f'figure/task_2/{args.model}_app_3.jpg')

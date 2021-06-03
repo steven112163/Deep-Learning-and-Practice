@@ -8,7 +8,7 @@
 |Argument|Description|Default|
 |---|---|---|
 |`'-b', '--batch_size'`|Batch size|32|
-|`'-i', '--image_size'`|Image size|64|
+|`'-i', '--image_size'`|Image size|128|
 |`'-w', '--width'`|Dimension of the hidden layers in normalizing flow|64|
 |`'-d', '--depth'`|Depth of the normalizing flow|16|
 |`'-n', '--num_levels'`|Number of levels in normalizing flow|3|
@@ -16,7 +16,7 @@
 |`'-lrd', '--learning_rate_discriminator'`|Learning rate of discriminator|0.0005|
 |`'-lrg', '--learning_rate_generator'`|Learning rate of generator|0.0001|
 |`'-lrnf', '--learning_rate_normalizing_flow'`|Learning rate of normalizing flow|0.001|
-|`'-e', '--epochs'`|Number of epochs|100|
+|`'-e', '--epochs'`|Number of epochs|20|
 |`'-t', '--task'`|Task 1 or task 2|1|
 |`'-m', '--model'`|cGAN or cNF|'dcgan'|
 |`'-inf', '--inference'`|Only infer or not|0|

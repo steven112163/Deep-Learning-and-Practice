@@ -2,6 +2,8 @@ import torch.nn as nn
 import torch
 
 
+# DCGAN is designed for image size 128
+
 class DCGenerator(nn.Module):
     def __init__(self, noise_size: int):
         super(DCGenerator, self).__init__()
@@ -44,6 +46,15 @@ class DCGenerator(nn.Module):
             nn.ReLU(True),
 
             nn.ConvTranspose2d(in_channels=64,
+                               out_channels=32,
+                               kernel_size=4,
+                               stride=2,
+                               padding=1,
+                               bias=False),
+            nn.BatchNorm2d(num_features=32),
+            nn.ReLU(True),
+
+            nn.ConvTranspose2d(in_channels=32,
                                out_channels=3,
                                kernel_size=4,
                                stride=2,
@@ -97,6 +108,15 @@ class DCDiscriminator(nn.Module):
             nn.LeakyReLU(negative_slope=0.2, inplace=True),
 
             nn.Conv2d(in_channels=512,
+                      out_channels=64,
+                      kernel_size=4,
+                      stride=2,
+                      padding=1,
+                      bias=False),
+            nn.BatchNorm2d(num_features=64),
+            nn.LeakyReLU(negative_slope=0.2, inplace=True),
+
+            nn.Conv2d(in_channels=64,
                       out_channels=1,
                       kernel_size=4,
                       stride=1,
