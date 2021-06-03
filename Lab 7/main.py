@@ -316,15 +316,18 @@ def main() -> None:
         if args.task == 1:
             transformation = transforms.Compose([transforms.RandomCrop(240),
                                                  transforms.RandomHorizontalFlip(),
+                                                 transforms.GaussianBlur(kernel_size=3),
                                                  transforms.Resize(args.image_size),
                                                  transforms.ToTensor()])
         else:
             transformation = transforms.Compose([transforms.RandomHorizontalFlip(),
+                                                 transforms.GaussianBlur(kernel_size=3),
                                                  transforms.Resize(args.image_size),
                                                  transforms.ToTensor()])
     else:
         transformation = transforms.Compose([transforms.RandomCrop(240),
                                              transforms.RandomHorizontalFlip(),
+                                             transforms.GaussianBlur(kernel_size=3),
                                              transforms.Resize(args.image_size),
                                              transforms.ToTensor(),
                                              transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
