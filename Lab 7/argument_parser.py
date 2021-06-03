@@ -19,9 +19,9 @@ def check_model_type(input_value: str) -> str:
     :param input_value: input string value
     :return: string value
     """
-    if input_value != 'gan' and input_value != 'nf':
-        raise ArgumentTypeError(f'Model should be "gan" or "nf"')
-    return input_value
+    if input_value != 'dcgan' and input_value != 'sagan' and input_value != 'glow':
+        raise ArgumentTypeError(f'Model should be "dcgan", "sagan" or "glow"')
+    return input_value.upper()
 
 def check_inference_type(input_value: str) -> int:
     """
@@ -60,15 +60,15 @@ def parse_arguments() -> Namespace:
     parser.add_argument('-d', '--depth', default=16, type=int, help='Depth of the normalizing flow')
     parser.add_argument('-n', '--num_levels', default=3, type=int, help='Number of levels in normalizing flow')
     parser.add_argument('-g', '--grad_norm_clip', default=50, type=float, help='Clip gradients during training')
-    parser.add_argument('-lrd', '--learning_rate_discriminator', default=0.0001, type=float,
+    parser.add_argument('-lrd', '--learning_rate_discriminator', default=0.0005, type=float,
                         help='Learning rate of discriminator')
     parser.add_argument('-lrg', '--learning_rate_generator', default=0.0001, type=float,
                         help='Learning rate of generator')
     parser.add_argument('-lrnf', '--learning_rate_normalizing_flow', default=0.001, type=float,
                         help='Learning rate of normalizing flow')
-    parser.add_argument('-e', '--epochs', default=200, type=int, help='Number of epochs')
+    parser.add_argument('-e', '--epochs', default=100, type=int, help='Number of epochs')
     parser.add_argument('-t', '--task', default=1, type=check_task_type, help='Task 1 or task 2')
-    parser.add_argument('-m', '--model', default=0, type=check_model_type, help='cGAN or cNF')
+    parser.add_argument('-m', '--model', default='dcgan', type=check_model_type, help='cGAN or cNF')
     parser.add_argument('-inf', '--inference', default=0, type=check_inference_type, help='Only infer or not')
     parser.add_argument('-v', '--verbosity', default=0, type=check_verbosity_type, help='Verbosity level')
 

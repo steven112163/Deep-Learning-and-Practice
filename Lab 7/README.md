@@ -13,11 +13,11 @@
 |`'-d', '--depth'`|Depth of the normalizing flow|16|
 |`'-n', '--num_levels'`|Number of levels in normalizing flow|3|
 |`'-g', '--grad_norm_clip'`|Clip gradients during training|50|
-|`'-lrd', '--learning_rate_discriminator'`|Learning rate of discriminator|0.0001|
+|`'-lrd', '--learning_rate_discriminator'`|Learning rate of discriminator|0.0005|
 |`'-lrg', '--learning_rate_generator'`|Learning rate of generator|0.0001|
 |`'-lrnf', '--learning_rate_normalizing_flow'`|Learning rate of normalizing flow|0.001|
-|`'-e', '--epochs'`|Number of epochs|
+|`'-e', '--epochs'`|Number of epochs|100|
 |`'-t', '--task'`|Task 1 or task 2|1|
-|`'-m', '--model'`|cGAN or cNF|0|
+|`'-m', '--model'`|cGAN or cNF|'dcgan'|
 |`'-inf', '--inference'`|Only infer or not|0|
 |`'-v', '--verbosity'`|Verbosity level|0|
