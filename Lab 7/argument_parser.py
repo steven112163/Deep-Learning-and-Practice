@@ -66,7 +66,7 @@ def parse_arguments() -> Namespace:
                         help='Learning rate of generator')
     parser.add_argument('-lrnf', '--learning_rate_normalizing_flow', default=0.001, type=float,
                         help='Learning rate of normalizing flow')
-    parser.add_argument('-e', '--epochs', default=100, type=int, help='Number of epochs')
+    parser.add_argument('-e', '--epochs', default=20, type=int, help='Number of epochs')
     parser.add_argument('-t', '--task', default=1, type=check_task_type, help='Task 1 or task 2')
     parser.add_argument('-m', '--model', default='dcgan', type=check_model_type, help='cGAN or cNF')
     parser.add_argument('-inf', '--inference', default=0, type=check_inference_type, help='Only infer or not')
