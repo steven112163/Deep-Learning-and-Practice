@@ -1,5 +1,6 @@
 from dcgan import DCGenerator
 from sagan import SAGenerator
+from srgan import SRGenerator
 from normalizing_flow import CGlow
 from task_2_dataset import CelebALoader
 from evaluator import EvaluationModel
@@ -14,7 +15,7 @@ import torch
 
 
 def test_cgan(data_loader: DataLoader,
-              generator: Optional[DCGenerator or SAGenerator],
+              generator: Optional[DCGenerator or SAGenerator or SRGenerator],
               num_classes: int,
               epoch: int,
               evaluator: EvaluationModel,
@@ -36,8 +37,8 @@ def test_cgan(data_loader: DataLoader,
     for batch_idx, batch_data in enumerate(data_loader):
         labels = batch_data
         batch_size = len(labels)
-        if args.model == 'DCGAN':
-            # DCGAN
+        if args.model == 'DCGAN' or args.model == 'SRGAN':
+            # DCGAN or SRGAN
             labels = labels.to(training_device).type(torch.float)
         else:
             # SAGAN
@@ -47,19 +48,22 @@ def test_cgan(data_loader: DataLoader,
         if args.model == 'DCGAN':
             # DCGAN
             noise = torch.cat([
-                torch.randn(batch_size, args.image_size - num_classes),
+                torch.randn((batch_size, args.image_size - num_classes)),
                 labels.cpu()
             ], 1).view(-1, args.image_size, 1, 1).to(training_device)
-        else:
+        elif args.model == 'SAGAN':
             # SAGAN
             noise = torch.randn((batch_size, args.image_size)).to(training_device)
+        else:
+            # SRGAN
+            noise = torch.randn((batch_size, 3, args.image_size, args.image_size)).to(training_device)
 
         # Generate fake image batch with generator
         if args.model == 'DCGAN':
             # DCGAN
             fake_outputs = generator.forward(noise)
         else:
-            # SAGAN
+            # SAGAN or SRGAN
             fake_outputs = generator.forward(noise, labels)
 
         # Compute accuracy

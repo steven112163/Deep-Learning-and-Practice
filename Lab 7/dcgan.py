@@ -57,7 +57,7 @@ class DCGenerator(nn.Module):
 
 
 class DCDiscriminator(nn.Module):
-    def __init__(self, image_size: int):
+    def __init__(self, num_classes: int, image_size: int):
         super(DCDiscriminator, self).__init__()
 
         self.net = nn.Sequential(
@@ -106,7 +106,7 @@ class DCDiscriminator(nn.Module):
         )
 
         self.label_to_condition = nn.Sequential(
-            nn.Linear(in_features=24,
+            nn.Linear(in_features=num_classes,
                       out_features=16 * 16,
                       bias=False),
             nn.ReLU(inplace=True),

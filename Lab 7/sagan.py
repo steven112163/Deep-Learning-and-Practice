@@ -129,12 +129,12 @@ class GenBlock(nn.Module):
 class SAGenerator(nn.Module):
     """Generator."""
 
-    def __init__(self, z_dim, g_conv_dim, num_classes):
+    def __init__(self, z_dim: int, g_conv_dim: int, num_classes: int):
         super(SAGenerator, self).__init__()
 
         self.z_dim = z_dim
         self.g_conv_dim = g_conv_dim
-        self.snlinear0 = snlinear(in_features=z_dim, out_features=g_conv_dim * 16 * 4 * 4)
+        self.snlinear0 = snlinear(in_features=z_dim, out_features=g_conv_dim * 16 * (z_dim // 32) ** 2)
         self.block1 = GenBlock(g_conv_dim * 16, g_conv_dim * 16, num_classes)
         self.block2 = GenBlock(g_conv_dim * 16, g_conv_dim * 8, num_classes)
         self.block3 = GenBlock(g_conv_dim * 8, g_conv_dim * 4, num_classes)
@@ -151,18 +151,18 @@ class SAGenerator(nn.Module):
 
     def forward(self, z, labels):
         # n x z_dim
-        act0 = self.snlinear0(z)  # n x g_conv_dim*16*4*4
-        act0 = act0.view(-1, self.g_conv_dim * 16, 4, 4)  # n x g_conv_dim*16 x 4 x 4
-        act1 = self.block1(act0, labels)  # n x g_conv_dim*16 x 8 x 8
-        act2 = self.block2(act1, labels)  # n x g_conv_dim*8 x 16 x 16
-        act3 = self.block3(act2, labels)  # n x g_conv_dim*4 x 32 x 32
-        act3 = self.self_attn(act3)  # n x g_conv_dim*4 x 32 x 32
-        act4 = self.block4(act3, labels)  # n x g_conv_dim*2 x 64 x 64
-        act5 = self.block5(act4, labels)  # n x g_conv_dim  x 128 x 128
-        act5 = self.bn(act5)  # n x g_conv_dim  x 128 x 128
-        act5 = self.relu(act5)  # n x g_conv_dim  x 128 x 128
-        act6 = self.snconv2d1(act5)  # n x 3 x 128 x 128
-        act6 = self.tanh(act6)  # n x 3 x 128 x 128
+        act0 = self.snlinear0(z)  # n x g_conv_dim*16*2*2
+        act0 = act0.view(-1, self.g_conv_dim * 16, 2, 2)  # n x g_conv_dim*16 x 2 x 2
+        act1 = self.block1(act0, labels)  # n x g_conv_dim*16 x 4 x 4
+        act2 = self.block2(act1, labels)  # n x g_conv_dim*8 x 8 x 8
+        act3 = self.block3(act2, labels)  # n x g_conv_dim*4 x 16 x 16
+        act3 = self.self_attn(act3)  # n x g_conv_dim*4 x 16 x 16
+        act4 = self.block4(act3, labels)  # n x g_conv_dim*2 x 32 x 32
+        act5 = self.block5(act4, labels)  # n x g_conv_dim  x 64 x 64
+        act5 = self.bn(act5)  # n x g_conv_dim  x 64 x 64
+        act5 = self.relu(act5)  # n x g_conv_dim  x 64 x 64
+        act6 = self.snconv2d1(act5)  # n x 3 x 64 x 64
+        act6 = self.tanh(act6)  # n x 3 x 64 x 64
         return act6
 
 
