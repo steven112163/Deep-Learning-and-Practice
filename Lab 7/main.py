@@ -1,4 +1,4 @@
-from dcgan import DCGenerator, DCDiscriminator
+from dcgan import DCGenerator, DCDiscriminator, weights_init
 from sagan import SAGenerator, SADiscriminator
 from srgan import SRGenerator, SRDiscriminator
 from normalizing_flow import CGlow, NLLLoss
@@ -44,9 +44,12 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
 
     if args.model == 'DCGAN':
         # DCGAN
-        generator = DCGenerator(noise_size=args.image_size).to(training_device)
+        generator = DCGenerator(noise_size=args.image_size,
+                                label_size=num_classes).to(training_device)
         discriminator = DCDiscriminator(num_classes=num_classes,
                                         image_size=args.image_size).to(training_device)
+        generator.apply(weights_init)
+        discriminator.apply(weights_init)
     elif args.model == 'SAGAN':
         # Self Attention GAN
         generator = SAGenerator(z_dim=args.image_size,
@@ -67,8 +70,8 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
     if os.path.exists(f'model/task_1/{args.model}_discriminator.pt'):
         discriminator.load_state_dict(torch.load(f'model/task_1/{args.model}_discriminator.pt'))
 
-    optimizer_g = optim.Adam(generator.parameters(), lr=args.learning_rate_generator)
-    optimizer_d = optim.Adam(discriminator.parameters(), lr=args.learning_rate_discriminator)
+    optimizer_g = optim.Adam(generator.parameters(), lr=args.learning_rate_generator, betas=(0.5, 0.999))
+    optimizer_d = optim.Adam(discriminator.parameters(), lr=args.learning_rate_discriminator, betas=(0.5, 0.999))
 
     # Setup average losses/accuracies container
     generator_losses = [0.0 for _ in range(args.epochs)]
@@ -316,18 +319,15 @@ def main() -> None:
         if args.task == 1:
             transformation = transforms.Compose([transforms.RandomCrop(240),
                                                  transforms.RandomHorizontalFlip(),
-                                                 transforms.GaussianBlur(kernel_size=3),
                                                  transforms.Resize(args.image_size),
                                                  transforms.ToTensor()])
         else:
             transformation = transforms.Compose([transforms.RandomHorizontalFlip(),
-                                                 transforms.GaussianBlur(kernel_size=3),
                                                  transforms.Resize(args.image_size),
                                                  transforms.ToTensor()])
     else:
         transformation = transforms.Compose([transforms.RandomCrop(240),
                                              transforms.RandomHorizontalFlip(),
-                                             transforms.GaussianBlur(kernel_size=3),
                                              transforms.Resize(args.image_size),
                                              transforms.ToTensor(),
                                              transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
