@@ -35,11 +35,25 @@ class ActNorm(nn.Module):
         > https://github.com/openai/glow
     """
 
-    def __init__(self, in_channels, scale=1., return_ldj=False):
+    def __init__(self, in_channels, cond_channels, mid_channels, cond_size, scale=1., return_ldj=False):
         super(ActNorm, self).__init__()
         self.register_buffer('is_initialized', torch.zeros(1))
         self.bias = nn.Parameter(torch.zeros(1, in_channels, 1, 1))
         self.logs = nn.Parameter(torch.zeros(1, in_channels, 1, 1))
+
+        self.cond_bias_nn = CondNN(in_channels=cond_channels, mid_channels=mid_channels, out_channels=in_channels)
+        self.cond_bias_converter = nn.Sequential(
+            nn.Linear(in_features=cond_size[2] * cond_size[3],
+                      out_features=1),
+            nn.Tanh()
+        )
+
+        self.cond_logs_nn = CondNN(in_channels=cond_channels, mid_channels=mid_channels, out_channels=in_channels)
+        self.cond_logs_converter = nn.Sequential(
+            nn.Linear(in_features=cond_size[2] * cond_size[3],
+                      out_features=1),
+            nn.Tanh()
+        )
 
         self.num_features = in_channels
         self.scale = float(scale)
@@ -58,20 +72,28 @@ class ActNorm(nn.Module):
             self.logs.data.copy_(logs.data)
             self.is_initialized += 1.
 
-    def _center(self, x, reverse=False):
+    def _center(self, x, x_cond, reverse=False):
+        batch_size, channel_size, height, width = x.size()
+        converted_cond = self.cond_bias_nn(x_cond).view(batch_size, channel_size, height*width)
+        converted_cond = self.cond_bias_converter(converted_cond).mean(dim=0, keepdim=True)
+        bias = self.bias * converted_cond.view(1, channel_size, 1, 1)
         if reverse:
-            return x - self.bias
+            return x - bias
         else:
-            return x + self.bias
+            return x + bias
 
-    def _scale(self, x, sldj, reverse=False):
+    def _scale(self, x, x_cond, sldj, reverse=False):
+        batch_size, channel_size, height, width = x.size()
+        converted_cond = self.cond_logs_nn(x_cond).view(batch_size, channel_size, height*width)
+        converted_cond = self.cond_logs_converter(converted_cond).mean(dim=0, keepdim=True)
+        logs = self.logs * converted_cond.view(1, channel_size, 1, 1)
         if reverse:
-            x = x * self.logs.mul(-1).exp()
+            x = x * logs.mul(-1).exp()
         else:
-            x = x * self.logs.exp()
+            x = x * logs.exp()
 
         if sldj is not None:
-            ldj = self.logs.flatten(1).sum(-1) * x.size(2) * x.size(3)
+            ldj = logs.flatten(1).sum(-1) * x.size(2) * x.size(3)
             if reverse:
                 sldj = sldj - ldj
             else:
@@ -79,21 +101,68 @@ class ActNorm(nn.Module):
 
         return x, sldj
 
-    def forward(self, x, ldj=None, reverse=False):
+    def forward(self, x, x_cond, ldj=None, reverse=False):
         if not self.is_initialized:
             self.initialize_parameters(x)
 
         if reverse:
-            x, ldj = self._scale(x, ldj, reverse)
-            x = self._center(x, reverse)
+            x, ldj = self._scale(x, x_cond, ldj, reverse)
+            x = self._center(x, x_cond, reverse)
         else:
-            x = self._center(x, reverse)
-            x, ldj = self._scale(x, ldj, reverse)
+            x = self._center(x, x_cond, reverse)
+            x, ldj = self._scale(x, x_cond, ldj, reverse)
 
         if self.return_ldj:
             return x, ldj
 
         return x
+
+
+class CondNN(nn.Module):
+    """
+    Small convolutional network used to compute scale and translate factors.
+    Args:
+        in_channels (int): Number of channels in the input.
+        mid_channels (int): Number of channels in the hidden activations.
+        out_channels (int): Number of channels in the output.
+    """
+
+    def __init__(self, in_channels, mid_channels, out_channels):
+        super(CondNN, self).__init__()
+        norm_fn = nn.BatchNorm2d
+
+        self.in_norm = norm_fn(in_channels)
+        self.in_conv = nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False)
+        nn.init.normal_(self.in_conv.weight, 0., 0.02)
+
+        self.mid_conv_1 = nn.Conv2d(mid_channels, mid_channels, kernel_size=3, padding=1, bias=False)
+        nn.init.normal_(self.mid_conv_1.weight, 0., 0.02)
+
+        self.mid_norm = norm_fn(mid_channels)
+        self.mid_conv_2 = nn.Conv2d(mid_channels, mid_channels, kernel_size=1, padding=0, bias=False)
+        nn.init.normal_(self.mid_conv_2.weight, 0., 0.02)
+
+        self.out_norm = norm_fn(mid_channels)
+        self.out_conv = nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=True)
+        nn.init.zeros_(self.out_conv.weight)
+        nn.init.zeros_(self.out_conv.bias)
+
+    def forward(self, x_cond):
+        x_cond = self.in_norm(x_cond)
+        x_cond = self.in_conv(x_cond)
+        x_cond = F.relu(x_cond)
+
+        x_cond = self.mid_conv_1(x_cond)
+        x_cond = self.mid_norm(x_cond)
+        x_cond = F.relu(x_cond)
+
+        x_cond = self.mid_conv_2(x_cond)
+        x_cond = self.out_norm(x_cond)
+        x_cond = F.relu(x_cond)
+
+        x_cond = self.out_conv(x_cond)
+
+        return x_cond
 
 
 class InvConv(nn.Module):
@@ -141,7 +210,7 @@ class Coupling(nn.Module):
 
     def __init__(self, in_channels, cond_channels, mid_channels):
         super(Coupling, self).__init__()
-        self.nn = CondNN(in_channels, cond_channels, mid_channels, 2 * in_channels)
+        self.nn = CondSTNN(in_channels, cond_channels, mid_channels, 2 * in_channels)
         self.scale = nn.Parameter(torch.ones(in_channels, 1, 1))
 
     def forward(self, x, x_cond, ldj, reverse=False):
@@ -164,7 +233,7 @@ class Coupling(nn.Module):
         return x, ldj
 
 
-class CondNN(nn.Module):
+class CondSTNN(nn.Module):
     """
     Small convolutional network used to compute scale and translate factors.
     Args:
@@ -176,25 +245,25 @@ class CondNN(nn.Module):
 
     def __init__(self, in_channels, cond_channels, mid_channels, out_channels,
                  use_act_norm=False):
-        super(CondNN, self).__init__()
+        super(CondSTNN, self).__init__()
         norm_fn = ActNorm if use_act_norm else nn.BatchNorm2d
 
         self.in_norm = norm_fn(in_channels)
         self.in_conv = nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1, bias=False)
         self.in_cond_conv = nn.Conv2d(cond_channels, mid_channels, kernel_size=3, padding=1, bias=False)
-        nn.init.normal_(self.in_conv.weight, 0., 0.05)
-        nn.init.normal_(self.in_cond_conv.weight, 0., 0.05)
+        nn.init.normal_(self.in_conv.weight, 0., 0.02)
+        nn.init.normal_(self.in_cond_conv.weight, 0., 0.02)
 
         self.mid_conv_1 = nn.Conv2d(mid_channels, mid_channels, kernel_size=3, padding=1, bias=False)
         self.mid_cond_conv_1 = nn.Conv2d(cond_channels, mid_channels, kernel_size=3, padding=1, bias=False)
-        nn.init.normal_(self.mid_conv_1.weight, 0., 0.05)
-        nn.init.normal_(self.mid_cond_conv_1.weight, 0., 0.05)
+        nn.init.normal_(self.mid_conv_1.weight, 0., 0.02)
+        nn.init.normal_(self.mid_cond_conv_1.weight, 0., 0.02)
 
         self.mid_norm = norm_fn(mid_channels)
         self.mid_conv_2 = nn.Conv2d(mid_channels, mid_channels, kernel_size=1, padding=0, bias=False)
         self.mid_cond_conv_2 = nn.Conv2d(cond_channels, mid_channels, kernel_size=1, padding=0, bias=False)
-        nn.init.normal_(self.mid_conv_2.weight, 0., 0.05)
-        nn.init.normal_(self.mid_cond_conv_2.weight, 0., 0.05)
+        nn.init.normal_(self.mid_conv_2.weight, 0., 0.02)
+        nn.init.normal_(self.mid_cond_conv_2.weight, 0., 0.02)
 
         self.out_norm = norm_fn(mid_channels)
         self.out_conv = nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1, bias=True)
@@ -221,17 +290,17 @@ class CondNN(nn.Module):
 
 class CGlow(nn.Module):
 
-    def __init__(self, num_channels, num_levels, num_steps, num_classes, image_size, mode='sketch'):
+    def __init__(self, num_channels, num_levels, num_steps, num_classes, image_size):
         super(CGlow, self).__init__()
 
         # Use bounds to rescale images before converting to logits, not learned
         self.register_buffer('bounds', torch.tensor([0.95], dtype=torch.float32))
         self.flows = _CGlow(in_channels=4 * 3,  # RGB image after squeeze
                             cond_channels=4,
+                            cond_size=(32, 4, image_size // 2, image_size // 2),
                             mid_channels=num_channels,
                             num_levels=num_levels,
                             num_steps=num_steps)
-        self.mode = mode
         self.image_size = image_size
         self.label_to_condition = nn.Sequential(
             nn.Linear(in_features=num_classes,
@@ -258,8 +327,6 @@ class CGlow(nn.Module):
 
             # De-quantize and convert to logits
             x, sldj = self._pre_process(x)
-        if self.mode == 'gray':
-            x_cond, _ = self._pre_process(x_cond)
 
         x = squeeze(x)
         x_cond = squeeze(x_cond)
@@ -285,8 +352,7 @@ class CGlow(nn.Module):
         y = y.log() - (1. - y).log()
 
         # Save log-determinant of Jacobian of initial transform
-        ldj = F.softplus(y) + F.softplus(-y) \
-              - F.softplus((1. - self.bounds).log() - self.bounds.log())
+        ldj = F.softplus(y) + F.softplus(-y) - F.softplus((1. - self.bounds).log() - self.bounds.log())
         sldj = ldj.flatten(1).sum(-1)
 
         return y, sldj
@@ -301,16 +367,19 @@ class _CGlow(nn.Module):
         num_steps (int): Number of steps of flow for each level.
     """
 
-    def __init__(self, in_channels, cond_channels, mid_channels, num_levels, num_steps):
+    def __init__(self, in_channels, cond_channels, cond_size, mid_channels, num_levels, num_steps):
         super(_CGlow, self).__init__()
         self.steps = nn.ModuleList([_FlowStep(in_channels=in_channels,
                                               cond_channels=cond_channels,
+                                              cond_size=cond_size,
                                               mid_channels=mid_channels)
                                     for _ in range(num_steps)])
 
         if num_levels > 1:
+            cond_size = (cond_size[0], cond_size[1] * 4, cond_size[2] // 2, cond_size[3] // 2)
             self.next = _CGlow(in_channels=2 * in_channels,
                                cond_channels=4 * cond_channels,
+                               cond_size=cond_size,
                                mid_channels=mid_channels,
                                num_levels=num_levels - 1,
                                num_steps=num_steps)
@@ -339,11 +408,11 @@ class _CGlow(nn.Module):
 
 
 class _FlowStep(nn.Module):
-    def __init__(self, in_channels, cond_channels, mid_channels):
+    def __init__(self, in_channels, cond_channels, cond_size, mid_channels):
         super(_FlowStep, self).__init__()
 
         # Activation normalization, invertible 1x1 convolution, affine coupling
-        self.norm = ActNorm(in_channels, return_ldj=True)
+        self.norm = ActNorm(in_channels, cond_channels, mid_channels, cond_size, return_ldj=True)
         self.conv = InvConv(in_channels)
         self.coup = Coupling(in_channels // 2, cond_channels, mid_channels)
 
@@ -351,9 +420,9 @@ class _FlowStep(nn.Module):
         if reverse:
             x, sldj = self.coup(x, x_cond, sldj, reverse)
             x, sldj = self.conv(x, sldj, reverse)
-            x, sldj = self.norm(x, sldj, reverse)
+            x, sldj = self.norm(x, x_cond, sldj, reverse)
         else:
-            x, sldj = self.norm(x, sldj, reverse)
+            x, sldj = self.norm(x, x_cond, sldj, reverse)
             x, sldj = self.conv(x, sldj, reverse)
             x, sldj = self.coup(x, x_cond, sldj, reverse)
 
@@ -399,8 +468,7 @@ class NLLLoss(nn.Module):
 
     def forward(self, z, sldj):
         prior_ll = -0.5 * (z ** 2 + np.log(2 * np.pi))
-        prior_ll = prior_ll.flatten(1).sum(-1) \
-                   - np.log(self.k) * np.prod(z.size()[1:])
+        prior_ll = prior_ll.flatten(1).sum(-1) - np.log(self.k) * np.prod(z.size()[1:])
         ll = prior_ll + sldj
         nll = -ll.mean()
 
