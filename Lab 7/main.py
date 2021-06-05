@@ -64,10 +64,10 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
         discriminator = SRDiscriminator(num_classes=num_classes,
                                         image_size=args.image_size).to(training_device)
 
-    if os.path.exists(f'model/task_1/{args.model}_generator.pt'):
-        generator.load_state_dict(torch.load(f'model/task_1/{args.model}_generator.pt'))
-    if os.path.exists(f'model/task_1/{args.model}_discriminator.pt'):
-        discriminator.load_state_dict(torch.load(f'model/task_1/{args.model}_discriminator.pt'))
+    if os.path.exists(f'model/task_1/{args.model}.pt'):
+        checkpoint = torch.load(f'model/task_1/{args.model}.pt')
+        generator.load_state_dict(checkpoint['generator'])
+        discriminator.load_state_dict(checkpoint['discriminator'])
 
     optimizer_g = optim.Adam(generator.parameters(), lr=args.learning_rate_generator, betas=(0.5, 0.999))
     optimizer_d = optim.Adam(discriminator.parameters(), lr=args.learning_rate_discriminator, betas=(0.5, 0.999))
@@ -110,8 +110,11 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
             print(f'[{epoch + 1}/{args.epochs}]   Average accuracy: {accuracies[epoch]:.2f}')
 
             # Save generator and discriminator
-            torch.save(generator, f'model/task_1/{args.model}_{epoch}_{accuracies[epoch]:.4f}_g.pt')
-            torch.save(discriminator, f'model/task_1/{args.model}_{epoch}_{accuracies[epoch]:.4f}_d.pt')
+            checkpoint = {
+                'generator': generator.state_dict(),
+                'discriminator': discriminator.state_dict()
+            }
+            torch.save(checkpoint, f'model/task_1/{args.model}_{epoch}_{accuracies[epoch]:.4f}.pt')
 
         # Plot losses and accuracies
         info_log('Plot losses and accuracies ...', args.verbosity)
@@ -160,7 +163,8 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
                              num_classes=num_classes,
                              image_size=args.image_size).to(training_device)
     if os.path.exists(f'model/task_1/{args.model}.pt'):
-        normalizing_flow.load_state_dict(torch.load(f'/model/task_1/{args.model}.pt'))
+        checkpoint = torch.load(f'/model/task_1/{args.model}.pt')
+        normalizing_flow.load_state_dict(checkpoint['normalizing_flow'])
 
     optimizer = optim.Adam(normalizing_flow.parameters(), lr=args.learning_rate_normalizing_flow)
     loss_fn = NLLLoss().to(training_device)
@@ -196,7 +200,9 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
                        f'test_figure/{args.model}_{epoch}_{accuracies[epoch]:.2f}.jpg')
             print(f'[{epoch + 1}/{args.epochs}]   Average accuracy: {accuracies[epoch]:.2f}')
 
-            torch.save(normalizing_flow, f'model/task_1/{args.model}_{epoch}_{accuracies[epoch]:.4f}.pt')
+            # Save normalizing flow
+            checkpoint = {'normalizing_flow': normalizing_flow.state_dict()}
+            torch.save(checkpoint, f'model/task_1/{args.model}_{epoch}_{accuracies[epoch]:.4f}.pt')
 
         # Plot losses and accuracies
         info_log('Plot losses and accuracies ...', args.verbosity)
@@ -239,7 +245,8 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
                              num_classes=num_classes,
                              image_size=args.image_size).to(training_device)
     if os.path.exists(f'model/task_2/{args.model}.pt'):
-        normalizing_flow.load_state_dict(torch.load(f'/model/task_2/{args.model}.pt'))
+        checkpoint = torch.load(f'/model/task_2/{args.model}.pt')
+        normalizing_flow.load_state_dict(checkpoint['normalizing_flow'])
 
     optimizer = optim.Adam(normalizing_flow.parameters(), lr=args.learning_rate_normalizing_flow)
     loss_fn = NLLLoss().to(training_device)
@@ -262,13 +269,16 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
             losses[epoch] = total_loss / len(train_dataset)
             print(f'[{epoch + 1}/{args.epochs}]   Average loss: {losses[epoch]}')
 
+            # 3 applications
             inference_celeb(train_dataset=train_dataset,
                             normalizing_flow=normalizing_flow,
                             num_classes=num_classes,
                             args=args,
                             training_device=training_device)
 
-            torch.save(normalizing_flow, f'model/task_2/{args.model}_{epoch}_{losses[epoch]:.4f}.pt')
+            # Save the model
+            checkpoint = {'normalizing_flow': normalizing_flow.state_dict()}
+            torch.save(checkpoint, f'model/task_2/{args.model}_{epoch}_{losses[epoch]:.4f}.pt')
 
         # Plot losses
         info_log('Plot losses ...', args.verbosity)
