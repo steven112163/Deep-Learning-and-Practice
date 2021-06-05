@@ -1,3 +1,4 @@
+from torch import device, cuda
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
@@ -60,6 +61,7 @@ class ActNorm(nn.Module):
         self.scale = float(scale)
         self.eps = 1e-6
         self.return_ldj = return_ldj
+        self.device = device('cuda' if cuda.is_available() else 'cpu')
 
     def initialize_parameters(self, x):
         if not self.training:
@@ -99,8 +101,8 @@ class ActNorm(nn.Module):
     def forward(self, x, x_cond, ldj=None, reverse=False):
         if not self.is_initialized:
             self.initialize_parameters(x)
-            cond_bias = torch.ones(self.bias.size())
-            cond_logs = torch.ones(self.logs.size())
+            cond_bias = torch.ones(self.bias.size(), device=self.device)
+            cond_logs = torch.ones(self.logs.size(), device=self.device)
         else:
             batch_size, channel_size, height, width = x.size()
             cond_bias_logs = self.cond_nn(x_cond).view(batch_size, 2 * channel_size, height * width)
