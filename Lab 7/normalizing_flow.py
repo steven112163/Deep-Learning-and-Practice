@@ -41,16 +41,17 @@ class ActNorm(nn.Module):
         self.bias = nn.Parameter(torch.zeros(1, in_channels, 1, 1))
         self.logs = nn.Parameter(torch.zeros(1, in_channels, 1, 1))
 
-        self.cond_bias_nn = CondNN(in_channels=cond_channels, mid_channels=mid_channels, out_channels=in_channels)
-        self.cond_bias_converter = nn.Sequential(
+        self.cond_nn = CondNN(in_channels=cond_channels, mid_channels=mid_channels, out_channels=2 * in_channels)
+        self.cond_converter = nn.Sequential(
             nn.Linear(in_features=cond_size[2] * cond_size[3],
-                      out_features=1),
-            nn.Tanh()
-        )
-
-        self.cond_logs_nn = CondNN(in_channels=cond_channels, mid_channels=mid_channels, out_channels=in_channels)
-        self.cond_logs_converter = nn.Sequential(
-            nn.Linear(in_features=cond_size[2] * cond_size[3],
+                      out_features=16,
+                      bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_features=16,
+                      out_features=4,
+                      bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_features=4,
                       out_features=1),
             nn.Tanh()
         )
@@ -72,21 +73,15 @@ class ActNorm(nn.Module):
             self.logs.data.copy_(logs.data)
             self.is_initialized += 1.
 
-    def _center(self, x, x_cond, reverse=False):
-        batch_size, channel_size, height, width = x.size()
-        converted_cond = self.cond_bias_nn(x_cond).view(batch_size, channel_size, height*width)
-        converted_cond = self.cond_bias_converter(converted_cond).mean(dim=0, keepdim=True)
-        bias = self.bias * converted_cond.view(1, channel_size, 1, 1)
+    def _center(self, x, cond_bias, reverse=False):
+        bias = self.bias * cond_bias.view(1, x.size(1), 1, 1)
         if reverse:
             return x - bias
         else:
             return x + bias
 
-    def _scale(self, x, x_cond, sldj, reverse=False):
-        batch_size, channel_size, height, width = x.size()
-        converted_cond = self.cond_logs_nn(x_cond).view(batch_size, channel_size, height*width)
-        converted_cond = self.cond_logs_converter(converted_cond).mean(dim=0, keepdim=True)
-        logs = self.logs * converted_cond.view(1, channel_size, 1, 1)
+    def _scale(self, x, cond_logs, sldj, reverse=False):
+        logs = self.logs * cond_logs.view(1, x.size(1), 1, 1)
         if reverse:
             x = x * logs.mul(-1).exp()
         else:
@@ -104,13 +99,20 @@ class ActNorm(nn.Module):
     def forward(self, x, x_cond, ldj=None, reverse=False):
         if not self.is_initialized:
             self.initialize_parameters(x)
+            cond_bias = torch.ones(self.bias.size())
+            cond_logs = torch.ones(self.logs.size())
+        else:
+            batch_size, channel_size, height, width = x.size()
+            cond_bias_logs = self.cond_nn(x_cond).view(batch_size, 2 * channel_size, height * width)
+            cond_bias_logs = self.cond_converter(cond_bias_logs).mean(dim=0, keepdim=True)
+            cond_bias, cond_logs = cond_bias_logs[:, 0::2, ...], cond_bias_logs[:, 1::2, ...]
 
         if reverse:
-            x, ldj = self._scale(x, x_cond, ldj, reverse)
-            x = self._center(x, x_cond, reverse)
+            x, ldj = self._scale(x, cond_logs, ldj, reverse)
+            x = self._center(x, cond_bias, reverse)
         else:
-            x = self._center(x, x_cond, reverse)
-            x, ldj = self._scale(x, x_cond, ldj, reverse)
+            x = self._center(x, cond_bias, reverse)
+            x, ldj = self._scale(x, cond_logs, ldj, reverse)
 
         if self.return_ldj:
             return x, ldj
@@ -118,9 +120,61 @@ class ActNorm(nn.Module):
         return x
 
 
+class InvConv(nn.Module):
+    """Invertible 1x1 Convolution for 2D inputs. Originally described in Glow
+    (https://arxiv.org/abs/1807.03039). Does not support LU-decomposed version.
+    Args:
+        in_channels (int): Number of channels in the input and output.
+    """
+
+    def __init__(self, in_channels, cond_channels, mid_channels, cond_size):
+        super(InvConv, self).__init__()
+        self.in_channels = in_channels
+
+        self.cond_nn = CondNN(in_channels=cond_channels, mid_channels=mid_channels, out_channels=in_channels)
+        self.cond_converter = nn.Sequential(
+            nn.Linear(in_features=cond_size[2] * cond_size[3],
+                      out_features=16,
+                      bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_features=16,
+                      out_features=32,
+                      bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_features=32,
+                      out_features=in_channels),
+            nn.Tanh()
+        )
+
+        # Initialize with a random orthogonal matrix
+        w_init = np.random.randn(in_channels, in_channels)
+        w_init = np.linalg.qr(w_init)[0].astype(np.float32)
+        self.weight = nn.Parameter(torch.from_numpy(w_init))
+
+    def forward(self, x, x_cond, sldj, reverse=False):
+        batch_size, channel_size, height, width = x.size()
+        cond_weight = self.cond_nn(x_cond).view(batch_size, channel_size, height * width)
+        cond_weight = self.cond_converter(cond_weight).mean(dim=0).view(channel_size, channel_size)
+        weight = self.weight * cond_weight
+
+        ldj = torch.slogdet(weight)[1] * x.size(2) * x.size(3)
+
+        if reverse:
+            weight = torch.inverse(weight.double()).float()
+            sldj = sldj - ldj
+        else:
+            weight = weight
+            sldj = sldj + ldj
+
+        weight = weight.view(self.in_channels, self.in_channels, 1, 1)
+        z = F.conv2d(x, weight)
+
+        return z, sldj
+
+
 class CondNN(nn.Module):
     """
-    Small convolutional network used to compute scale and translate factors.
+    Small convolutional network used to compute bias, logs, or weight.
     Args:
         in_channels (int): Number of channels in the input.
         mid_channels (int): Number of channels in the hidden activations.
@@ -163,38 +217,6 @@ class CondNN(nn.Module):
         x_cond = self.out_conv(x_cond)
 
         return x_cond
-
-
-class InvConv(nn.Module):
-    """Invertible 1x1 Convolution for 2D inputs. Originally described in Glow
-    (https://arxiv.org/abs/1807.03039). Does not support LU-decomposed version.
-    Args:
-        num_channels (int): Number of channels in the input and output.
-    """
-
-    def __init__(self, num_channels):
-        super(InvConv, self).__init__()
-        self.num_channels = num_channels
-
-        # Initialize with a random orthogonal matrix
-        w_init = np.random.randn(num_channels, num_channels)
-        w_init = np.linalg.qr(w_init)[0].astype(np.float32)
-        self.weight = nn.Parameter(torch.from_numpy(w_init))
-
-    def forward(self, x, sldj, reverse=False):
-        ldj = torch.slogdet(self.weight)[1] * x.size(2) * x.size(3)
-
-        if reverse:
-            weight = torch.inverse(self.weight.double()).float()
-            sldj = sldj - ldj
-        else:
-            weight = self.weight
-            sldj = sldj + ldj
-
-        weight = weight.view(self.num_channels, self.num_channels, 1, 1)
-        z = F.conv2d(x, weight)
-
-        return z, sldj
 
 
 class Coupling(nn.Module):
@@ -413,17 +435,17 @@ class _FlowStep(nn.Module):
 
         # Activation normalization, invertible 1x1 convolution, affine coupling
         self.norm = ActNorm(in_channels, cond_channels, mid_channels, cond_size, return_ldj=True)
-        self.conv = InvConv(in_channels)
+        self.conv = InvConv(in_channels, cond_channels, mid_channels, cond_size)
         self.coup = Coupling(in_channels // 2, cond_channels, mid_channels)
 
     def forward(self, x, x_cond, sldj=None, reverse=False):
         if reverse:
             x, sldj = self.coup(x, x_cond, sldj, reverse)
-            x, sldj = self.conv(x, sldj, reverse)
+            x, sldj = self.conv(x, x_cond, sldj, reverse)
             x, sldj = self.norm(x, x_cond, sldj, reverse)
         else:
             x, sldj = self.norm(x, x_cond, sldj, reverse)
-            x, sldj = self.conv(x, sldj, reverse)
+            x, sldj = self.conv(x, x_cond, sldj, reverse)
             x, sldj = self.coup(x, x_cond, sldj, reverse)
 
         return x, sldj
