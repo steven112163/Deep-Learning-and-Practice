@@ -59,7 +59,8 @@ def parse_arguments() -> Namespace:
                         help='Dimension of the hidden layers in normalizing flow')
     parser.add_argument('-d', '--depth', default=16, type=int, help='Depth of the normalizing flow')
     parser.add_argument('-n', '--num_levels', default=3, type=int, help='Number of levels in normalizing flow')
-    parser.add_argument('-g', '--grad_norm_clip', default=50, type=float, help='Clip gradients during training')
+    parser.add_argument('-gv', '--grad_value_clip', default=0, type=float, help='Clip gradients at specific value')
+    parser.add_argument('-gn', '--grad_norm_clip', default=0, type=float, help="Clip gradients' norm at specific value")
     parser.add_argument('-lrd', '--learning_rate_discriminator', default=0.0002, type=float,
                         help='Learning rate of discriminator')
     parser.add_argument('-lrg', '--learning_rate_generator', default=0.0002, type=float,

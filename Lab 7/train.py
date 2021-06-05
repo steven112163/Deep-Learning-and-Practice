@@ -196,7 +196,10 @@ def train_cnf(data_loader: DataLoader,
         optimizer.zero_grad()
         loss.backward()
 
-        nn.utils.clip_grad_norm_(normalizing_flow.parameters(), args.grad_norm_clip)
+        if args.grad_value_clip > 0:
+            nn.utils.clip_grad_value_(normalizing_flow.parameters(), args.grad_value_clip)
+        if args.grad_norm_clip > 0:
+            nn.utils.clip_grad_norm_(normalizing_flow.parameters(), args.grad_norm_clip)
 
         optimizer.step()
 
