@@ -11,7 +11,7 @@ def plot_losses(losses: Tuple[List[float], ...], labels: List[str], task: str, m
     :param model: which model is used
     :return: None
     """
-    plt.figure(0)
+    plt.clf()
     plt.title('Loss')
     plt.xlabel('epoch')
     plt.ylabel('loss')
@@ -29,7 +29,7 @@ def plot_accuracies(accuracies: List[float], model: str) -> None:
     :param model: which model is used
     :return: None
     """
-    plt.figure(1)
+    plt.clf()
     plt.title('Accuracy')
     plt.xlabel('epoch')
     plt.ylabel('accuracy')
