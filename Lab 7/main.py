@@ -15,7 +15,6 @@ from torchvision.transforms import transforms
 from torchvision.utils import save_image, make_grid
 from torch import device, cuda
 from argparse import Namespace
-import matplotlib.pyplot as plt
 import torch.optim as optim
 import os
 import torch
@@ -119,7 +118,6 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
         plot_losses(losses=(generator_losses, discriminator_losses), labels=['Generator', 'Discriminator'],
                     task='task_1', model=args.model)
         plot_accuracies(accuracies=accuracies, model=args.model)
-        plt.close()
     else:
         # Start inferring
         info_log('Start inferring', args.verbosity)
@@ -204,7 +202,6 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
         info_log('Plot losses and accuracies ...', args.verbosity)
         plot_losses(losses=(losses,), labels=['loss'], task='task_1', model=args.model)
         plot_accuracies(accuracies=accuracies, model=args.model)
-        plt.close()
     else:
         # Start inferring
         info_log('Start inferring', args.verbosity)
@@ -276,7 +273,6 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
         # Plot losses
         info_log('Plot losses ...', args.verbosity)
         plot_losses(losses=(losses,), labels=['loss'], task='task_2', model=args.model)
-        plt.close()
     else:
         # Start inferring
         info_log('Start inferring', args.verbosity)
