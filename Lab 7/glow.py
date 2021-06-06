@@ -401,8 +401,6 @@ class CGlow(nn.Module):
         :param x_cond: Batched conditions
         :return: Batched latent & negative log likelihood & label logits
         """
-        if x.min() < 0 or x.max() > 1:
-            raise ValueError('Expected x in [0, 1], got min/max {}/{}'.format(x.min(), x.max()))
         x, sld = self._pre_process(x)
 
         z, _, sld = self.flows.forward(x=x, x_cond=x_cond, sld=sld, reverse=False)
