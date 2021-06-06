@@ -409,7 +409,7 @@ class CGlow(nn.Module):
 
         mean, logs = self.get_mean_and_logs(label=x_label)
         sld += GaussianDiag.log_prob(mean=mean, logs=logs, x=z)
-        nll = (sld - np.log(256) * np.prod(z.size()[1:])) / float(np.log(2.0) * x.size(1) * x.size(2) * x.size(3))
+        nll = sld
 
         label_logits = self.project_latent(z.mean(2).mean(2)).view(-1, self.num_classes)
         label_logits *= torch.exp(self.latent_logs * 3)
@@ -445,21 +445,15 @@ class CGlow(nn.Module):
 
     def _pre_process(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """
-        Preprocess x to logits
+        Preprocess x to x - 0.5 + U(0, 1/256)
         :param x: Batched data
         :return: Preprocessed data and sum of log-determinant
         """
-        # y = x
-        y = (x * 255. + torch.rand_like(x)) / 256.
-        y = (2 * y - 1) * self.bounds
-        y = (y + 1) / 2
-        y = y.log() - (1. - y).log()
+        x -= 0.5
+        x += torch.zeros_like(x).uniform_(1.0 / 256)
+        sld = float(-np.log(256.) * x.size(1) * x.size(2) * x.size(3)) * torch.ones(x.size(0), device=x.device)
 
-        # Save log-determinant of Jacobian of initial transform
-        ld = func.softplus(y) + func.softplus(-y) - func.softplus((1. - self.bounds).log() - self.bounds.log())
-        sld = ld.flatten(1).sum(-1) * torch.ones(x.size(0), device=x.device)
-
-        return y, sld
+        return x, sld
 
     def get_mean_and_logs(self, label: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """
@@ -696,10 +690,11 @@ class NLLLoss(nn.Module):
     def __init__(self):
         super(NLLLoss, self).__init__()
 
-    def forward(self, nll: torch.Tensor, label_logits: torch.Tensor,
+    def forward(self, x: torch.Tensor, z: torch.Tensor, nll: torch.Tensor, label_logits: torch.Tensor,
                 labels: torch.Tensor) -> torch.Tensor:
         """
         Compute loss
+        :param x: inputs
         :param z: latent code
         :param nll: Negative log-likelihood
         :param label_logits: Label logits
@@ -707,6 +702,7 @@ class NLLLoss(nn.Module):
         :return: Loss
         """
 
-        nll = nn.BCEWithLogitsLoss()(label_logits, labels.float()) * 0.5 + torch.mean(nll)
+        nll = nn.BCEWithLogitsLoss()(label_logits, labels.float()) * 0.5 + torch.mean(nll) - np.log(256) * np.prod(
+            z.size()[1:])
 
-        return -nll
+        return -nll / float(np.log(2.0) * x.size(1) * x.size(2) * x.size(3))
