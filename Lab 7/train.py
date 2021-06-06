@@ -193,7 +193,7 @@ def train_cnf(data_loader: DataLoader,
             normalizing_flow.forward(x=images, x_label=labels)
 
         z, nll, label_logits = normalizing_flow.forward(x=images, x_label=labels)
-        loss = loss_fn.forward(nll=nll, label_logits=label_logits, labels=labels)
+        loss = loss_fn.forward(z=z, nll=nll, label_logits=label_logits, labels=labels)
         total_loss += loss.data.cpu().item()
 
         normalizing_flow.zero_grad()

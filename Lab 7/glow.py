@@ -93,9 +93,9 @@ class ActNorm(nn.Module):
         if sld is not None:
             ld = self.logs.sum() * x.size(2) * x.size(3)
             if reverse:
-                sld = sld - ld
+                sld -= ld
             else:
-                sld = sld + ld
+                sld += ld
 
         return x, sld
 
@@ -150,10 +150,10 @@ class InvConv(nn.Module):
 
         if reverse:
             weight = torch.inverse(self.weight.double()).float()
-            sld = sld - ld
+            sld -= ld
         else:
             weight = self.weight
-            sld = sld + ld
+            sld += ld
 
         weight = weight.view(self.num_channels, self.num_channels, 1, 1)
         z = func.conv2d(input=x, weight=weight)
@@ -193,12 +193,13 @@ class Coupling(nn.Module):
         scale = torch.sigmoid(scale + 2.)
 
         # Scale and translate
+        ld = torch.sum(scale.log(), dim=[1, 2, 3])
         if reverse:
             x_change = (x_change - translate) / scale
-            sld = sld - torch.sum(scale.log(), dim=[1, 2, 3])
+            sld -= ld
         else:
             x_change = x_change * scale + translate
-            sld = sld + torch.sum(scale.log(), dim=[1, 2, 3])
+            sld += ld
 
         x = torch.cat((x_change, x_id), dim=1)
 
@@ -272,9 +273,7 @@ class NN(nn.Module):
 
         x = self.out_conv(x)
 
-        output = x * torch.exp(self.logs * 3)
-
-        return output
+        return x * torch.exp(self.logs * 3)
 
 
 class FlowStep(nn.Module):
@@ -309,14 +308,17 @@ class FlowStep(nn.Module):
         :param reverse: Reverse or not
         :return: Batched data and sum of log-determinant
         """
-        if reverse:
-            x, sld = self.coup.forward(x=x, x_cond=x_cond, sld=sld, reverse=reverse)
-            x, sld = self.conv.forward(x=x, sld=sld, reverse=reverse)
-            x, sld = self.norm.forward(x=x, sld=sld, reverse=reverse)
+        if not reverse:
+            # Normal flow
+            x, sld = self.norm.forward(x=x, sld=sld, reverse=False)
+            x, sld = self.conv.forward(x=x, sld=sld, reverse=False)
+            x, sld = self.coup.forward(x=x, x_cond=x_cond, sld=sld, reverse=False)
         else:
-            x, sld = self.norm.forward(x=x, sld=sld, reverse=reverse)
-            x, sld = self.conv.forward(x=x, sld=sld, reverse=reverse)
-            x, sld = self.coup.forward(x=x, x_cond=x_cond, sld=sld, reverse=reverse)
+            # Reverse flow
+            with torch.no_grad():
+                x, sld = self.coup.forward(x=x, x_cond=x_cond, sld=sld, reverse=True)
+                x, sld = self.conv.forward(x=x, sld=sld, reverse=True)
+                x, sld = self.norm.forward(x=x, sld=sld, reverse=True)
 
         return x, sld
 
@@ -334,24 +336,24 @@ class CGlow(nn.Module):
     def __init__(self, num_channels: int, num_levels: int, num_steps: int, num_classes: int, image_size: int):
         super(CGlow, self).__init__()
 
-        # Use bounds to rescale images before converting to logits, not learned
-        self.register_buffer('bounds', torch.tensor([0.95], dtype=torch.float32))
-
         self.flows = _CGlow(in_channels=3,
                             cond_channels=1,
                             mid_channels=num_channels,
                             num_levels=num_levels,
                             num_steps=num_steps)
 
+        # Number of channels and image size after normal flow
         self.out_channels = 3 * (2 ** (num_levels - 1)) * 4
         self.out_image_size = image_size // (2 ** num_levels)
 
+        # Project label to mean and variance
         self.project_label = nn.Linear(in_features=num_classes,
                                        out_features=self.out_channels * 2 * self.out_image_size ** 2)
         nn.init.zeros_(self.project_label.weight)
         nn.init.zeros_(self.project_label.bias)
         self.register_parameter('label_logs', nn.Parameter(torch.zeros(1, self.out_channels * 2, 1, 1)))
 
+        # Project latent code to label
         self.project_latent = nn.Linear(in_features=self.out_channels,
                                         out_features=num_classes)
         nn.init.zeros_(self.project_label.weight)
@@ -394,17 +396,15 @@ class CGlow(nn.Module):
         :param x: Batched data
         :param x_label: Batched labels
         :param x_cond: Batched conditions
-        :return: Batched latent and negative log likelihood
+        :return: Batched latent & negative log likelihood & label logits
         """
-        if x.min() < 0 or x.max() > 1:
-            raise ValueError(f'Expected x in [0, 1], got min/max {x.min()}/{x.max()}')
         x, sld = self._pre_process(x)
 
         z, _, sld = self.flows.forward(x=x, x_cond=x_cond, sld=sld, reverse=False)
 
         mean, logs = self.get_mean_and_logs(label=x_label)
         sld += GaussianDiag.log_prob(mean=mean, logs=logs, x=z)
-        nll = - sld / float(np.log(2.) * x.size(1) * x.size(2) * x.size(3))
+        nll = sld
 
         label_logits = self.project_latent(z.mean(2).mean(2)).view(-1, self.num_classes)
         label_logits *= torch.exp(self.latent_logs * 3)
@@ -420,9 +420,8 @@ class CGlow(nn.Module):
         :return: Batched images
         """
         with torch.no_grad():
-            mean, logs = self.get_mean_and_logs(label=z_label)
-
             if z is None:
+                mean, logs = self.get_mean_and_logs(label=z_label)
                 z = GaussianDiag.sample(mean, logs)
             sld = torch.zeros(z.size(0), device=z.device)
 
@@ -436,20 +435,18 @@ class CGlow(nn.Module):
                     pass
                 next_flow = next_flow.next
 
-            x, _, sld = self.flows.forward(x=z, x_cond=z_cond, sld=sld, reverse=True)
+            x, _, _ = self.flows.forward(x=z, x_cond=z_cond, sld=sld, reverse=True)
         return x
 
     @staticmethod
     def _pre_process(x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """
-        Preprocess x to x + N(0, 1/256)
+        Preprocess x to x + U(0, 1/256)
         :param x: Batched data
         :return: Preprocessed data and sum of log-determinant
         """
-        x = x + torch.normal(mean=torch.zeros_like(x),
-                             std=torch.ones_like(x) * (1. / 256.))
-        sld = torch.zeros_like(x[:, 0, 0, 0])
-        sld += float(-np.log(256.) * x.size(1) * x.size(2) * x.size(3))
+        x += torch.zeros_like(x).uniform_(1.0 / 256)
+        sld = float(-np.log(256.) * x.size(1) * x.size(2) * x.size(3)) * torch.ones(x.size(0), device=x.device)
 
         return x, sld
 
@@ -508,44 +505,59 @@ class _CGlow(nn.Module):
         :param x_cond: Batched condition
         :param sld: Sum of log-determinant
         :param reverse: Reverse or not
-        :return: Batched data and sum of log-determinant
+        :return: Batched data & batched conditions & sum of log-determinant
         """
         if not reverse:
-            x = self.squeeze.forward(x=x, reverse=False)
-            x_cond = self.squeeze_cond.forward(x=x_cond, reverse=False)
-
-            for step in self.steps:
-                x, sld = step.forward(x=x, x_cond=x_cond, sld=sld, reverse=False)
-
-            try:
-                x, sld = self.split.forward(x=x, sld=sld, reverse=False)
-                x_cond, sld = self.split_cond.forward(x=x_cond, sld=sld, reverse=False)
-            except AttributeError:
-                pass
-
-            try:
-                x, x_cond, sld = self.next.forward(x=x, x_cond=x_cond, sld=sld, reverse=False)
-            except AttributeError:
-                pass
+            return self.normal_flow(x=x, x_cond=x_cond, sld=sld)
         else:
+            return self.reverse_flow(x=x, x_cond=x_cond, sld=sld)
+
+    def normal_flow(self, x: torch.Tensor, x_cond: torch.Tensor, sld: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+        """
+        Normal flow
+        :param x: Batched data
+        :param x_cond: Batched condition
+        :param sld: Sum of log-determinant
+        :return: Batched data & batched conditions & sum of log-determinant
+        """
+        x = self.squeeze.forward(x=x, reverse=False)
+        x_cond = self.squeeze_cond.forward(x=x_cond, reverse=False)
+
+        for step in self.steps:
+            x, sld = step.forward(x=x, x_cond=x_cond, sld=sld, reverse=False)
+
+        try:
+            x, sld = self.split.forward(x=x, sld=sld, reverse=False)
+            x_cond, sld = self.split_cond.forward(x=x_cond, sld=sld, reverse=False)
+            x, x_cond, sld = self.next.forward(x=x, x_cond=x_cond, sld=sld, reverse=False)
+        except AttributeError:
+            pass
+
+        return x, x_cond, sld
+
+    def reverse_flow(self, x: torch.Tensor, x_cond: torch.Tensor, sld: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+        """
+        Reverse flow
+        :param x: Batched data
+        :param x_cond: Batched condition
+        :param sld: Sum of log-determinant
+        :return: Batched data & batched conditions & sum of log-determinant
+        """
+        with torch.no_grad():
             try:
                 x, x_cond, sld = self.next.forward(x=x, x_cond=x_cond, sld=sld, reverse=True)
-            except AttributeError:
-                pass
-
-            try:
                 x, sld = self.split.forward(x=x, sld=sld, reverse=True)
                 x_cond, sld = self.split_cond.forward(x=x_cond, sld=sld, reverse=True)
             except AttributeError:
                 pass
 
-            for step in self.steps:
+            for step in reversed(self.steps):
                 x, sld = step.forward(x=x, x_cond=x_cond, sld=sld, reverse=True)
 
-            x = self.squeeze.forward(x=x, reverse=reverse)
+            x = self.squeeze.forward(x=x, reverse=True)
             x_cond = self.squeeze_cond.forward(x=x_cond, reverse=True)
 
-        return x, x_cond, sld
+            return x, x_cond, sld
 
 
 class Squeeze2d(nn.Module):
@@ -662,9 +674,7 @@ class GaussianDiag:
         :param logs: Log std
         :return: Sampled data
         """
-        eps = torch.normal(mean=torch.zeros_like(mean),
-                           std=torch.ones_like(logs))
-        return mean + torch.exp(logs) * eps
+        return torch.normal(mean=mean, std=torch.exp(logs))
 
 
 class NLLLoss(nn.Module):
@@ -672,17 +682,22 @@ class NLLLoss(nn.Module):
     Negative log-likelihood loss
     """
 
-    def __init__(self):
+    def __init__(self, k=256):
         super(NLLLoss, self).__init__()
+        self.k = k
 
-    def forward(self, nll: torch.Tensor, label_logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    def forward(self, z: torch.Tensor, nll: torch.Tensor, label_logits: torch.Tensor,
+                labels: torch.Tensor) -> torch.Tensor:
         """
         Compute loss
+        :param z: latent code
         :param nll: Negative log-likelihood
         :param label_logits: Label logits
         :param labels: Labels
         :return: Loss
         """
-        nll = nn.BCEWithLogitsLoss()(label_logits, labels.float()) * 0.5 + torch.mean(nll)
 
-        return nll
+        nll = nn.BCEWithLogitsLoss()(label_logits, labels.float()) * 0.5 + torch.mean(nll) - np.log(self.k) * np.prod(
+            z.size()[1:])
+
+        return -nll
