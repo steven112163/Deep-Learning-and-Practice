@@ -1,7 +1,7 @@
 from dcgan import DCGenerator, DCDiscriminator, weights_init
 from sagan import SAGenerator, SADiscriminator
 from srgan import SRGenerator, SRDiscriminator
-from normalizing_flow import CGlow, NLLLoss
+from glow import CGlow, NLLLoss
 from task_1_dataset import ICLEVRLoader
 from task_2_dataset import CelebALoader
 from train import train_cgan, train_cnf

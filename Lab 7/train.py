@@ -1,7 +1,7 @@
 from dcgan import DCGenerator, DCDiscriminator
 from sagan import SAGenerator, SADiscriminator
 from srgan import SRGenerator, SRDiscriminator, GeneratorLoss
-from normalizing_flow import CGlow, NLLLoss
+from glow import CGlow, NLLLoss
 from util import debug_log
 from torch.utils.data import DataLoader
 from torch import device
@@ -188,8 +188,12 @@ def train_cnf(data_loader: DataLoader,
         images = images.to(training_device)
         labels = labels.to(training_device).type(torch.float)
 
-        z, nll = normalizing_flow(images, labels)
-        loss = loss_fn(z, nll)
+        if epoch == 0 and batch_idx == 0:
+            # Initialize the network
+            normalizing_flow.forward(x=images, x_label=labels)
+
+        z, nll, label_logits = normalizing_flow.forward(x=images, x_label=labels)
+        loss = loss_fn.forward(nll=nll, label_logits=label_logits, labels=labels)
         total_loss += loss.data.cpu().item()
 
         normalizing_flow.zero_grad()

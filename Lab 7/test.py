@@ -1,7 +1,7 @@
 from dcgan import DCGenerator
 from sagan import SAGenerator
 from srgan import SRGenerator
-from normalizing_flow import CGlow
+from glow import CGlow
 from task_2_dataset import CelebALoader
 from evaluator import EvaluationModel
 from util import debug_log
@@ -109,8 +109,7 @@ def test_cnf(data_loader: DataLoader,
         labels = labels.to(training_device).type(torch.float)
         batch_size = len(labels)
 
-        z = torch.randn((batch_size, 3, args.image_size, args.image_size), dtype=torch.float, device=training_device)
-        fake_images, _ = normalizing_flow(z, labels, reverse=True)
+        fake_images = normalizing_flow.forward(x=None, x_label=labels, reverse=True)
         fake_images = torch.sigmoid(fake_images)
 
         transformed_images = torch.randn(0, 3, args.image_size, args.image_size)
@@ -158,11 +157,8 @@ def inference_celeb(train_dataset: CelebALoader,
         labels = torch.cat([labels, torch.from_numpy(label).view(1, 40)], 0)
     labels = labels.to(training_device).type(torch.float)
 
-    # Generate random latent code
-    z = torch.randn((32, 3, args.image_size, args.image_size), dtype=torch.float, device=training_device)
-
     # Produce fake images
-    fake_images, _ = normalizing_flow(z, labels, reverse=True)
+    fake_images = normalizing_flow.forward(x=None, x_label=labels, reverse=True)
     fake_images = torch.sigmoid(fake_images)
 
     # Save fake images for application 1
@@ -188,22 +184,22 @@ def inference_celeb(train_dataset: CelebALoader,
         second_label = torch.from_numpy(second_label).to(training_device).type(torch.float).view(1, 40)
 
         # Generate latent code
-        first_z, _ = normalizing_flow(first_image, first_label)
-        second_z, _ = normalizing_flow(second_image, second_label)
+        first_z, _, _ = normalizing_flow.forward(x=first_image, x_label=first_label)
+        second_z, _, _ = normalizing_flow.forward(x=second_image, x_label=second_label)
 
         # Compute interval
-        interval_z = (second_z - first_z) / 10.0
-        interval_label = (second_label - first_label) / 10.0
+        interval_z = (second_z - first_z) / 4.0
+        interval_label = (second_label - first_label) / 4.0
 
         # Generate linear images
-        for num_of_intervals in range(11):
-            image, _ = normalizing_flow(first_z + num_of_intervals * interval_z,
-                                        first_label + num_of_intervals * interval_label,
-                                        reverse=True)
+        for num_of_intervals in range(5):
+            image = normalizing_flow.forward(x=first_z + num_of_intervals * interval_z,
+                                             x_label=first_label + num_of_intervals * interval_label,
+                                             reverse=True)
             image = torch.sigmoid(image)
             linear_images = torch.cat([linear_images,
                                        image.cpu().detach().view(1, 3, args.image_size, args.image_size)], 0)
-    save_image(make_grid(linear_images, nrow=9), f'figure/task_2/{args.model}_app_2.jpg')
+    save_image(make_grid(linear_images, nrow=5), f'figure/task_2/{args.model}_app_2.jpg')
 
     # Application 3
     # Get a image and labels with negative/positive smiling
@@ -219,20 +215,20 @@ def inference_celeb(train_dataset: CelebALoader,
     pos_label[0, 31] = 1.
 
     # Generate latent code
-    neg_z, _ = normalizing_flow(image, neg_label)
-    pos_z, _ = normalizing_flow(image, pos_label)
+    neg_z, _, _ = normalizing_flow.forward(x=image, x_label=neg_label)
+    pos_z, _, _ = normalizing_flow.forward(x=image, x_label=pos_label)
 
     # Compute interval
-    interval_z = (pos_z - neg_z) / 10.0
-    interval_label = (pos_label - neg_label) / 10.0
+    interval_z = (pos_z - neg_z) / 4.0
+    interval_label = (pos_label - neg_label) / 4.0
 
     # Generate manipulated images
     manipulated_images = torch.randn(0, 3, args.image_size, args.image_size)
-    for num_of_intervals in range(11):
-        image, _ = normalizing_flow(neg_z + num_of_intervals * interval_z,
-                                    neg_label + num_of_intervals * interval_label,
-                                    reverse=True)
+    for num_of_intervals in range(5):
+        image = normalizing_flow.forward(x=neg_z + num_of_intervals * interval_z,
+                                         x_label=neg_label + num_of_intervals * interval_label,
+                                         reverse=True)
         image = torch.sigmoid(image)
         manipulated_images = torch.cat([manipulated_images,
                                         image.cpu().detach().view(1, 3, args.image_size, args.image_size)], 0)
-    save_image(make_grid(manipulated_images, nrow=10), f'figure/task_2/{args.model}_app_3.jpg')
+    save_image(make_grid(manipulated_images, nrow=5), f'figure/task_2/{args.model}_app_3.jpg')
