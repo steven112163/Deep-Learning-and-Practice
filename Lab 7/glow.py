@@ -336,6 +336,9 @@ class CGlow(nn.Module):
     def __init__(self, num_channels: int, num_levels: int, num_steps: int, num_classes: int, image_size: int):
         super(CGlow, self).__init__()
 
+        # Use bounds to rescale images before converting to logits, not learned
+        self.register_buffer('bounds', torch.tensor([0.95], dtype=torch.float32))
+
         self.flows = _CGlow(in_channels=3,
                             cond_channels=1,
                             mid_channels=num_channels,
@@ -398,13 +401,15 @@ class CGlow(nn.Module):
         :param x_cond: Batched conditions
         :return: Batched latent & negative log likelihood & label logits
         """
+        if x.min() < 0 or x.max() > 1:
+            raise ValueError('Expected x in [0, 1], got min/max {}/{}'.format(x.min(), x.max()))
         x, sld = self._pre_process(x)
 
         z, _, sld = self.flows.forward(x=x, x_cond=x_cond, sld=sld, reverse=False)
 
         mean, logs = self.get_mean_and_logs(label=x_label)
         sld += GaussianDiag.log_prob(mean=mean, logs=logs, x=z)
-        nll = sld
+        nll = (sld - np.log(256) * np.prod(z.size()[1:])) / float(np.log(2.0) * x.size(1) * x.size(2) * x.size(3))
 
         label_logits = self.project_latent(z.mean(2).mean(2)).view(-1, self.num_classes)
         label_logits *= torch.exp(self.latent_logs * 3)
@@ -438,17 +443,23 @@ class CGlow(nn.Module):
             x, _, _ = self.flows.forward(x=z, x_cond=z_cond, sld=sld, reverse=True)
         return x
 
-    @staticmethod
-    def _pre_process(x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+    def _pre_process(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """
-        Preprocess x to x + U(0, 1/256)
+        Preprocess x to logits
         :param x: Batched data
         :return: Preprocessed data and sum of log-determinant
         """
-        x += torch.zeros_like(x).uniform_(1.0 / 256)
-        sld = float(-np.log(256.) * x.size(1) * x.size(2) * x.size(3)) * torch.ones(x.size(0), device=x.device)
+        # y = x
+        y = (x * 255. + torch.rand_like(x)) / 256.
+        y = (2 * y - 1) * self.bounds
+        y = (y + 1) / 2
+        y = y.log() - (1. - y).log()
 
-        return x, sld
+        # Save log-determinant of Jacobian of initial transform
+        ld = func.softplus(y) + func.softplus(-y) - func.softplus((1. - self.bounds).log() - self.bounds.log())
+        sld = ld.flatten(1).sum(-1) * torch.ones(x.size(0), device=x.device)
+
+        return y, sld
 
     def get_mean_and_logs(self, label: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """
@@ -682,11 +693,10 @@ class NLLLoss(nn.Module):
     Negative log-likelihood loss
     """
 
-    def __init__(self, k=256):
+    def __init__(self):
         super(NLLLoss, self).__init__()
-        self.k = k
 
-    def forward(self, z: torch.Tensor, nll: torch.Tensor, label_logits: torch.Tensor,
+    def forward(self, nll: torch.Tensor, label_logits: torch.Tensor,
                 labels: torch.Tensor) -> torch.Tensor:
         """
         Compute loss
@@ -697,7 +707,6 @@ class NLLLoss(nn.Module):
         :return: Loss
         """
 
-        nll = nn.BCEWithLogitsLoss()(label_logits, labels.float()) * 0.5 + torch.mean(nll) - np.log(self.k) * np.prod(
-            z.size()[1:])
+        nll = nn.BCEWithLogitsLoss()(label_logits, labels.float()) * 0.5 + torch.mean(nll)
 
         return -nll
