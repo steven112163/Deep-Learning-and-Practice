@@ -38,6 +38,7 @@ class ActNorm(nn.Module):
 
     def __init__(self, in_channels, cond_channels, mid_channels, cond_size, scale=1., return_ldj=False):
         super(ActNorm, self).__init__()
+
         self.register_buffer('is_initialized', torch.zeros(1))
         self.bias = nn.Parameter(torch.zeros(1, in_channels, 1, 1))
         self.logs = nn.Parameter(torch.zeros(1, in_channels, 1, 1))
@@ -45,14 +46,6 @@ class ActNorm(nn.Module):
         self.cond_nn = CondNN(in_channels=cond_channels, mid_channels=mid_channels, out_channels=2 * in_channels)
         self.cond_converter = nn.Sequential(
             nn.Linear(in_features=cond_size[2] * cond_size[3],
-                      out_features=16,
-                      bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=16,
-                      out_features=4,
-                      bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=4,
                       out_features=1),
             nn.Tanh()
         )
@@ -131,19 +124,13 @@ class InvConv(nn.Module):
 
     def __init__(self, in_channels, cond_channels, mid_channels, cond_size):
         super(InvConv, self).__init__()
+
+        self.register_buffer('is_initialized', torch.zeros(1))
         self.in_channels = in_channels
 
         self.cond_nn = CondNN(in_channels=cond_channels, mid_channels=mid_channels, out_channels=in_channels)
         self.cond_converter = nn.Sequential(
             nn.Linear(in_features=cond_size[2] * cond_size[3],
-                      out_features=16,
-                      bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=16,
-                      out_features=32,
-                      bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=32,
                       out_features=in_channels),
             nn.Tanh()
         )
@@ -154,10 +141,14 @@ class InvConv(nn.Module):
         self.weight = nn.Parameter(torch.from_numpy(w_init))
 
     def forward(self, x, x_cond, sldj, reverse=False):
-        batch_size, channel_size, height, width = x.size()
-        cond_weight = self.cond_nn(x_cond).view(batch_size, channel_size, height * width)
-        cond_weight = self.cond_converter(cond_weight).mean(dim=0).view(channel_size, channel_size)
-        weight = self.weight * cond_weight
+        if not self.is_initialized:
+            self.is_initialized += 1.
+            weight = self.weight
+        else:
+            batch_size, channel_size, height, width = x.size()
+            cond_weight = self.cond_nn(x_cond).view(batch_size, channel_size, height * width)
+            cond_weight = self.cond_converter(cond_weight).mean(dim=0).view(channel_size, channel_size)
+            weight = self.weight * cond_weight
 
         ldj = torch.slogdet(weight)[1] * x.size(2) * x.size(3)
 
