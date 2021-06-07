@@ -207,7 +207,8 @@ def train_cnf(data_loader: DataLoader,
 
         optimizer.step()
 
-        debug_log(f'[{epoch + 1}/{args.epochs}][{batch_idx + 1}/{len(data_loader)}]   Loss: {loss}',
-                  args.verbosity)
+        if batch_idx % 50 == 0:
+            debug_log(f'[{epoch + 1}/{args.epochs}][{batch_idx + 1}/{len(data_loader)}]   Loss: {loss}',
+                      args.verbosity)
 
     return total_loss

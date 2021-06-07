@@ -777,4 +777,4 @@ class NLLLoss(nn.Module):
         :param labels: Labels
         :return: Loss
         """
-        return func.binary_cross_entropy_with_logits(input=label_logits, target=labels.float()) * 0.5 + torch.mean(nll)
+        return func.binary_cross_entropy_with_logits(input=label_logits, target=labels.float()) * 0.01 + torch.mean(nll)

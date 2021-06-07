@@ -170,7 +170,7 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
         checkpoint = torch.load(f'/model/task_1/{args.model}.pt')
         normalizing_flow.load_state_dict(checkpoint['normalizing_flow'])
 
-    optimizer = optim.Adam(normalizing_flow.parameters(), lr=args.learning_rate_normalizing_flow)
+    optimizer = optim.Adamax(normalizing_flow.parameters(), lr=args.learning_rate_normalizing_flow, weight_decay=5e-5)
     loss_fn = NLLLoss().to(training_device)
 
     # Setup average losses/accuracies container
@@ -255,7 +255,7 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
         checkpoint = torch.load(f'/model/task_2/{args.model}.pt')
         normalizing_flow.load_state_dict(checkpoint['normalizing_flow'])
 
-    optimizer = optim.Adam(normalizing_flow.parameters(), lr=args.learning_rate_normalizing_flow)
+    optimizer = optim.Adamax(normalizing_flow.parameters(), lr=args.learning_rate_normalizing_flow, weight_decay=5e-5)
     loss_fn = NLLLoss().to(training_device)
 
     # Setup average losses container
