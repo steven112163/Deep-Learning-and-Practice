@@ -15,6 +15,7 @@ from torchvision.transforms import transforms
 from torchvision.utils import save_image, make_grid
 from torch import device, cuda
 from argparse import Namespace
+from math import inf
 import torch.optim as optim
 import os
 import torch
@@ -80,6 +81,7 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
     if not args.inference:
         # Start training
         info_log('Start training', args.verbosity)
+        max_acc = 0.0
         for epoch in range(args.epochs):
             # Train
             total_g_loss, total_d_loss = train_cgan(data_loader=train_loader,
@@ -105,16 +107,18 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
                                                         args=args,
                                                         training_device=training_device)
             accuracies[epoch] = total_accuracy / len(test_loader)
-            save_image(make_grid(generated_image, nrow=8),
-                       f'test_figure/{args.model}_{epoch}_{accuracies[epoch]:.2f}.jpg')
             print(f'[{epoch + 1}/{args.epochs}]   Average accuracy: {accuracies[epoch]:.2f}')
 
-            # Save generator and discriminator
-            checkpoint = {
-                'generator': generator.state_dict(),
-                'discriminator': discriminator.state_dict()
-            }
-            torch.save(checkpoint, f'model/task_1/{args.model}_{epoch}_{accuracies[epoch]:.4f}.pt')
+            # Save generator and discriminator, and plot test image
+            if accuracies[epoch] > max_acc:
+                max_acc = accuracies[epoch]
+                save_image(make_grid(generated_image, nrow=8),
+                           f'test_figure/{args.model}_{epoch}_{accuracies[epoch]:.2f}.jpg')
+                checkpoint = {
+                    'generator': generator.state_dict(),
+                    'discriminator': discriminator.state_dict()
+                }
+                torch.save(checkpoint, f'model/task_1/{args.model}_{epoch}_{accuracies[epoch]:.4f}.pt')
 
         # Plot losses and accuracies
         info_log('Plot losses and accuracies ...', args.verbosity)
@@ -176,6 +180,7 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
     if not args.inference:
         # Start training
         info_log('Start training', args.verbosity)
+        max_acc = 0.0
         for epoch in range(args.epochs):
             # Train
             total_loss = train_cnf(data_loader=train_loader,
@@ -196,13 +201,15 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
                                                        args=args,
                                                        training_device=training_device)
             accuracies[epoch] = total_accuracy / len(test_loader)
-            save_image(make_grid(generated_image, nrow=8),
-                       f'test_figure/{args.model}_{epoch}_{accuracies[epoch]:.2f}.jpg')
             print(f'[{epoch + 1}/{args.epochs}]   Average accuracy: {accuracies[epoch]:.2f}')
 
-            # Save normalizing flow
-            checkpoint = {'normalizing_flow': normalizing_flow.state_dict()}
-            torch.save(checkpoint, f'model/task_1/{args.model}_{epoch}_{accuracies[epoch]:.4f}.pt')
+            # Save normalizing flow, and plot test image
+            if accuracies[epoch] > max_acc:
+                max_acc = accuracies[epoch]
+                save_image(make_grid(generated_image, nrow=8),
+                           f'test_figure/{args.model}_{epoch}_{accuracies[epoch]:.2f}.jpg')
+                checkpoint = {'normalizing_flow': normalizing_flow.state_dict()}
+                torch.save(checkpoint, f'model/task_1/{args.model}_{epoch}_{accuracies[epoch]:.4f}.pt')
 
         # Plot losses and accuracies
         info_log('Plot losses and accuracies ...', args.verbosity)
@@ -257,6 +264,7 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
     if not args.inference:
         # Start training
         info_log('Start training', args.verbosity)
+        min_loss = inf
         for epoch in range(args.epochs):
             # Train
             total_loss = train_cnf(data_loader=train_loader,
@@ -277,8 +285,10 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
                             training_device=training_device)
 
             # Save the model
-            checkpoint = {'normalizing_flow': normalizing_flow.state_dict()}
-            torch.save(checkpoint, f'model/task_2/{args.model}_{epoch}_{losses[epoch]:.4f}.pt')
+            if losses[epoch] < min_loss:
+                min_loss = losses[epoch]
+                checkpoint = {'normalizing_flow': normalizing_flow.state_dict()}
+                torch.save(checkpoint, f'model/task_2/{args.model}_{epoch}_{losses[epoch]:.4f}.pt')
 
         # Plot losses
         info_log('Plot losses ...', args.verbosity)
