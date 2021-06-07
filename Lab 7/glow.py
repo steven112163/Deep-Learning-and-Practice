@@ -1,30 +1,8 @@
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 import torch.nn as nn
 import torch.nn.functional as func
 import numpy as np
 import torch
-
-
-def mean_dim(tensor: torch.Tensor, dim: list = None, keepdims: bool = False) -> torch.Tensor:
-    """
-    Take the mean along multiple dimensions
-    :param tensor: Tensor of values to average
-    :param dim: List of dimensions along which to take the mean
-    :param keepdims: Keep dimensions rather than squeezing
-    :return: New tensor of mean value(s)
-    """
-    if dim is None:
-        return tensor.mean()
-    else:
-        if isinstance(dim, int):
-            dim = [dim]
-        dim = sorted(dim)
-        for d in dim:
-            tensor = tensor.mean(dim=d, keepdim=True)
-        if not keepdims:
-            for i, d in enumerate(dim):
-                tensor.squeeze_(d - i)
-        return tensor
 
 
 class ActNorm(nn.Module):
@@ -58,8 +36,8 @@ class ActNorm(nn.Module):
             return
 
         with torch.no_grad():
-            bias = -mean_dim(tensor=x.clone(), dim=[0, 2, 3], keepdims=True)
-            v = mean_dim(tensor=(x.clone() + bias) ** 2, dim=[0, 2, 3], keepdims=True)
+            bias = -torch.mean(x.clone(), dim=[0, 2, 3], keepdim=True)
+            v = torch.mean((x.clone() + bias) ** 2, dim=[0, 2, 3], keepdim=True)
             logs = (self.scale / (v.sqrt() + self.eps)).log()
             self.bias.data.copy_(bias.data)
             self.logs.data.copy_(logs.data)
@@ -72,10 +50,10 @@ class ActNorm(nn.Module):
         :param reverse: Reverse or not
         :return: Translated data
         """
-        if reverse:
-            return x - self.bias
-        else:
+        if not reverse:
             return x + self.bias
+        else:
+            return x - self.bias
 
     def _scale(self, x: torch.Tensor, sld: torch.Tensor, reverse: bool = False) -> Tuple[torch.Tensor, ...]:
         """
@@ -85,17 +63,17 @@ class ActNorm(nn.Module):
         :param reverse: Reverse or not
         :return: Scaled data and sum of log-determinant
         """
-        if reverse:
-            x = x * self.logs.mul(-1).exp()
+        if not reverse:
+            x *= torch.exp(self.logs)
         else:
-            x = x * self.logs.exp()
+            x *= torch.exp(-self.logs)
 
         if sld is not None:
             ld = self.logs.sum() * x.size(2) * x.size(3)
-            if reverse:
-                sld -= ld
-            else:
+            if not reverse:
                 sld += ld
+            else:
+                sld -= ld
 
         return x, sld
 
@@ -110,12 +88,12 @@ class ActNorm(nn.Module):
         if not self.is_initialized:
             self.initialize_parameters(x=x)
 
-        if reverse:
-            x = self._center(x=x, reverse=reverse)
-            x, sld = self._scale(x=x, sld=sld, reverse=reverse)
+        if not reverse:
+            x = self._center(x=x, reverse=False)
+            x, sld = self._scale(x=x, sld=sld, reverse=False)
         else:
-            x, sld = self._scale(x=x, sld=sld, reverse=reverse)
-            x = self._center(x=x, reverse=reverse)
+            x, sld = self._scale(x=x, sld=sld, reverse=True)
+            x = self._center(x=x, reverse=True)
 
         return x, sld
 
@@ -134,9 +112,22 @@ class InvConv(nn.Module):
         self.num_channels = num_channels
 
         # Initialize with a random orthogonal matrix
-        w_init = np.random.randn(num_channels, num_channels)
-        w_init = np.linalg.qr(w_init)[0].astype(np.float32)
-        self.weight = nn.Parameter(torch.from_numpy(w_init))
+        w_init = torch.qr(torch.randn(num_channels, num_channels))[0]
+        p, lower, upper = torch.lu_unpack(*torch.lu(w_init))
+        s = torch.diag(upper)
+        sign_s = torch.sign(s)
+        log_s = torch.log(torch.abs(s))
+        upper = torch.triu(upper, 1)
+        l_mask = torch.tril(torch.ones(num_channels, num_channels), -1)
+        eye = torch.eye(num_channels, num_channels)
+
+        self.register_buffer("p", p)
+        self.register_buffer("sign_s", sign_s)
+        self.lower = nn.Parameter(lower)
+        self.log_s = nn.Parameter(log_s)
+        self.upper = nn.Parameter(upper)
+        self.l_mask = l_mask
+        self.eye = eye
 
     def forward(self, x: torch.Tensor, sld: torch.tensor, reverse: bool = False) -> Tuple[torch.Tensor, ...]:
         """
@@ -146,19 +137,189 @@ class InvConv(nn.Module):
         :param reverse: Reverse or not
         :return: Transformed data and sum of log-determinant
         """
-        ld = torch.slogdet(self.weight)[1] * x.size(2) * x.size(3)
+        self.l_mask = self.l_mask.to(x.device)
+        self.eye = self.eye.to(x.device)
 
-        if reverse:
-            weight = torch.inverse(self.weight.double()).float()
-            sld -= ld
-        else:
-            weight = self.weight
+        lower = self.lower * self.l_mask + self.eye
+
+        u = self.upper * self.l_mask.transpose(0, 1).contiguous()
+        u += torch.diag(self.sign_s * torch.exp(self.log_s))
+
+        ld = torch.sum(self.log_s) * x.size(2) * x.size(3)
+
+        if not reverse:
+            weight = torch.matmul(self.p, torch.matmul(lower, u)).view(self.num_channels, self.num_channels, 1, 1)
             sld += ld
+        else:
+            u_inv = torch.inverse(u)
+            l_inv = torch.inverse(lower)
+            p_inv = torch.inverse(self.p)
 
-        weight = weight.view(self.num_channels, self.num_channels, 1, 1)
+            weight = torch.matmul(u_inv, torch.matmul(l_inv, p_inv)).view(self.num_channels, self.num_channels, 1, 1)
+            sld -= ld
+
         z = func.conv2d(input=x, weight=weight)
 
         return z, sld
+
+
+def compute_same_pad(kernel_size: Optional[int or List[int]], stride: Optional[int or List[int]]) -> List[int]:
+    """
+    Compute paddings
+    :param kernel_size: Kernel size
+    :param stride: Stride
+    :return: Paddings
+    """
+    if isinstance(kernel_size, int):
+        kernel_size = [kernel_size]
+
+    if isinstance(stride, int):
+        stride = [stride]
+
+    assert len(stride) == len(
+        kernel_size
+    ), "Pass kernel size and stride both as int, or both as equal length iterable"
+
+    return [((k - 1) * s + 1) // 2 for k, s in zip(kernel_size, stride)]
+
+
+class Conv2d(nn.Module):
+    """
+    Conv2d with actnorm
+    :arg in_channels: Input channels
+    :arg out_channels: Output channels
+    :arg kernel_size: Kernel size
+    :arg stride: Stride
+    :arg padding: Padding
+    :arg do_actnorm: Whether use actnorm
+    :arg weight_std: Weight standard deviation
+    """
+
+    def __init__(
+            self,
+            in_channels: int,
+            out_channels: int,
+            kernel_size: Optional[int or Tuple[int, int]] = (3, 3),
+            stride: Optional[int or Tuple[int, int]] = (1, 1),
+            padding: str = "same",
+            do_actnorm: bool = True,
+            weight_std: float = 0.05,
+    ):
+        super().__init__()
+
+        if padding == "same":
+            padding = compute_same_pad(kernel_size=kernel_size, stride=stride)
+        elif padding == "valid":
+            padding = 0
+
+        self.conv = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            bias=(not do_actnorm),
+        )
+
+        # init weight with std
+        self.conv.weight.data.normal_(mean=0.0, std=weight_std)
+
+        if not do_actnorm:
+            self.conv.bias.data.zero_()
+        else:
+            self.actnorm = ActNorm(in_channels=out_channels)
+
+        self.do_actnorm = do_actnorm
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forwarding
+        :param x: Batched data
+        :return: Batched data
+        """
+        output = self.conv(x)
+        if self.do_actnorm:
+            output, _ = self.actnorm.forward(x=output)
+        return output
+
+
+class Conv2dZeros(nn.Module):
+    """
+    Conv2d with zero initial weight and bias
+    :arg in_channels: Input channels
+    :arg out_channels: Output channels
+    :arg kernel_size: Kernel size
+    :arg stride: Stride
+    :arg padding: Padding
+    :arg logscale_factor: Log scale factor
+    """
+
+    def __init__(
+            self,
+            in_channels: int,
+            out_channels: int,
+            kernel_size: Optional[int or Tuple[int, int]] = (3, 3),
+            stride: Optional[int or Tuple[int, int]] = (1, 1),
+            padding: str = "same",
+            logscale_factor: int = 3,
+    ):
+        super().__init__()
+
+        if padding == "same":
+            padding = compute_same_pad(kernel_size=kernel_size, stride=stride)
+        elif padding == "valid":
+            padding = 0
+
+        self.conv = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding)
+
+        self.conv.weight.data.zero_()
+        self.conv.bias.data.zero_()
+
+        self.logscale_factor = logscale_factor
+        self.logs = nn.Parameter(torch.zeros(out_channels, 1, 1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forwarding
+        :param x: Batched data
+        :return: Batched data
+        """
+        output = self.conv(x)
+        return output * torch.exp(self.logs * self.logscale_factor)
+
+
+class LinearZeros(nn.Module):
+    """
+    Linear with zero initial weight and bias
+    :arg in_channels: Input features
+    :arg out_channels: Output features
+    :arg logscale_factor: Log scale factor
+    """
+
+    def __init__(self, in_channels: int, out_channels: int, logscale_factor: int = 3):
+        super().__init__()
+
+        self.linear = nn.Linear(in_features=in_channels, out_features=out_channels)
+        self.linear.weight.data.zero_()
+        self.linear.bias.data.zero_()
+
+        self.logscale_factor = logscale_factor
+
+        self.logs = nn.Parameter(torch.zeros(out_channels))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forwarding
+        :param x: Batched data
+        :return: Batched data
+        """
+        output = self.linear(x)
+        return output * torch.exp(self.logs * self.logscale_factor)
 
 
 class Coupling(nn.Module):
@@ -186,7 +347,7 @@ class Coupling(nn.Module):
         :param reverse: Reverse or not
         :return: Affine coupled data and sum of log-determinant
         """
-        x_change, x_id = x.chunk(2, dim=1)
+        x_id, x_change = x[:, : x.size(1) // 2, ...], x[:, x.size(1) // 2:, ...]
 
         scale_and_translate = self.nn.forward(x=x_id, x_cond=x_cond)
         scale, translate = scale_and_translate[:, 0::2, ...], scale_and_translate[:, 1::2, ...]
@@ -194,14 +355,16 @@ class Coupling(nn.Module):
 
         # Scale and translate
         ld = torch.sum(scale.log(), dim=[1, 2, 3])
-        if reverse:
-            x_change = (x_change - translate) / scale
-            sld -= ld
-        else:
-            x_change = x_change * scale + translate
+        if not reverse:
+            x_change += translate
+            x_change *= scale
             sld += ld
+        else:
+            x_change /= scale
+            x_change -= translate
+            sld -= ld
 
-        x = torch.cat((x_change, x_id), dim=1)
+        x = torch.cat((x_id, x_change), dim=1)
 
         return x, sld
 
@@ -218,43 +381,20 @@ class NN(nn.Module):
     def __init__(self, in_channels: int, cond_channels: int, mid_channels: int, out_channels: int):
         super(NN, self).__init__()
 
-        self.in_conv = nn.Conv2d(in_channels=in_channels,
-                                 out_channels=mid_channels,
-                                 kernel_size=3,
-                                 padding=1,
-                                 bias=False)
-        self.in_cond_conv = nn.Conv2d(in_channels=cond_channels,
-                                      out_channels=mid_channels,
-                                      kernel_size=3,
-                                      padding=1,
-                                      bias=False)
-        nn.init.normal_(self.in_conv.weight, mean=0., std=0.05)
-        nn.init.normal_(self.in_cond_conv.weight, mean=0., std=0.05)
-        self.in_norm = ActNorm(in_channels=mid_channels)
+        self.in_conv = Conv2d(in_channels=in_channels,
+                              out_channels=mid_channels)
+        self.in_cond_conv = Conv2d(in_channels=cond_channels,
+                                   out_channels=mid_channels)
 
-        self.mid_conv = nn.Conv2d(in_channels=mid_channels,
-                                  out_channels=mid_channels,
-                                  kernel_size=1,
-                                  padding=0,
-                                  bias=False)
-        self.mid_cond_conv = nn.Conv2d(in_channels=cond_channels,
-                                       out_channels=mid_channels,
-                                       kernel_size=1,
-                                       padding=0,
-                                       bias=False)
-        nn.init.normal_(self.mid_conv.weight, mean=0., std=0.05)
-        nn.init.normal_(self.mid_cond_conv.weight, mean=0., std=0.05)
-        self.mid_norm = ActNorm(in_channels=mid_channels)
+        self.mid_conv = Conv2d(in_channels=mid_channels,
+                               out_channels=mid_channels,
+                               kernel_size=(1, 1))
+        self.mid_cond_conv = Conv2d(in_channels=mid_channels,
+                                    out_channels=mid_channels,
+                                    kernel_size=(1, 1))
 
-        self.out_conv = nn.Conv2d(in_channels=mid_channels,
-                                  out_channels=out_channels,
-                                  kernel_size=3,
-                                  padding=1,
-                                  bias=True)
-        nn.init.zeros_(self.out_conv.weight)
-        nn.init.zeros_(self.out_conv.bias)
-
-        self.register_parameter('logs', nn.Parameter(torch.zeros(out_channels, 1, 1)))
+        self.out_conv = Conv2dZeros(in_channels=mid_channels,
+                                    out_channels=out_channels)
 
     def forward(self, x: torch.Tensor, x_cond: torch.Tensor) -> torch.Tensor:
         """
@@ -263,17 +403,15 @@ class NN(nn.Module):
         :param x_cond: Batched condition
         :return: Scale and translate as one tensor
         """
-        x = self.in_conv(x) + self.in_cond_conv(x_cond)
-        x, _ = self.in_norm(x)
+        x_cond = self.in_cond_conv(x_cond)
+        x = self.in_conv(x) + x_cond
         x = func.relu(x)
 
-        x = self.mid_conv(x) + self.mid_cond_conv(x_cond)
-        x, _ = self.mid_norm(x)
+        x_cond = self.mid_cond_conv(x_cond)
+        x = self.mid_conv(x) + x_cond
         x = func.relu(x)
 
-        x = self.out_conv(x)
-
-        return x * torch.exp(self.logs * 3)
+        return self.out_conv(x)
 
 
 class FlowStep(nn.Module):
@@ -315,10 +453,9 @@ class FlowStep(nn.Module):
             x, sld = self.coup.forward(x=x, x_cond=x_cond, sld=sld, reverse=False)
         else:
             # Reverse flow
-            with torch.no_grad():
-                x, sld = self.coup.forward(x=x, x_cond=x_cond, sld=sld, reverse=True)
-                x, sld = self.conv.forward(x=x, sld=sld, reverse=True)
-                x, sld = self.norm.forward(x=x, sld=sld, reverse=True)
+            x, sld = self.coup.forward(x=x, x_cond=x_cond, sld=sld, reverse=True)
+            x, sld = self.conv.forward(x=x, sld=sld, reverse=True)
+            x, sld = self.norm.forward(x=x, sld=sld, reverse=True)
 
         return x, sld
 
@@ -349,19 +486,26 @@ class CGlow(nn.Module):
         self.out_channels = 3 * (2 ** (num_levels - 1)) * 4
         self.out_image_size = image_size // (2 ** num_levels)
 
+        self.learn_top_fn = Conv2dZeros(self.out_channels * 2, self.out_channels * 2)
+        self.register_buffer(
+            "prior_h",
+            torch.zeros(
+                [
+                    1,
+                    self.out_channels * 2,
+                    self.out_image_size,
+                    self.out_image_size,
+                ]
+            ),
+        )
+
         # Project label to mean and variance
-        self.project_label = nn.Linear(in_features=num_classes,
-                                       out_features=self.out_channels * 2 * self.out_image_size ** 2)
-        nn.init.zeros_(self.project_label.weight)
-        nn.init.zeros_(self.project_label.bias)
-        self.register_parameter('label_logs', nn.Parameter(torch.zeros(1, self.out_channels * 2, 1, 1)))
+        self.project_label = LinearZeros(in_channels=num_classes,
+                                         out_channels=self.out_channels * 2)
 
         # Project latent code to label
-        self.project_latent = nn.Linear(in_features=self.out_channels,
-                                        out_features=num_classes)
-        nn.init.zeros_(self.project_label.weight)
-        nn.init.zeros_(self.project_label.bias)
-        self.register_parameter('latent_logs', nn.Parameter(torch.zeros(num_classes)))
+        self.project_latent = LinearZeros(in_channels=self.out_channels,
+                                          out_channels=num_classes)
 
         self.num_classes = num_classes
         self.image_size = image_size
@@ -405,12 +549,12 @@ class CGlow(nn.Module):
 
         z, _, sld = self.flows.forward(x=x, x_cond=x_cond, sld=sld, reverse=False)
 
-        mean, logs = self.get_mean_and_logs(label=x_label)
+        mean, logs = self.get_mean_and_logs(data=x, label=x_label)
         sld += GaussianDiag.log_prob(mean=mean, logs=logs, x=z)
-        nll = sld
+        nll = (-sld) / float(np.log(2.0) * x.size(0) * x.size(1) * x.size(2))
 
         label_logits = self.project_latent(z.mean(2).mean(2)).view(-1, self.num_classes)
-        label_logits *= torch.exp(self.latent_logs * 3)
+        label_logits = torch.sigmoid(label_logits)
 
         return z, nll, label_logits
 
@@ -424,7 +568,8 @@ class CGlow(nn.Module):
         """
         with torch.no_grad():
             if z is None:
-                mean, logs = self.get_mean_and_logs(label=z_label)
+                z = torch.zeros(z_label.size(0))
+                mean, logs = self.get_mean_and_logs(data=z, label=z_label)
                 z = GaussianDiag.sample(mean, logs)
             sld = torch.zeros(z.size(0), device=z.device)
 
@@ -453,18 +598,18 @@ class CGlow(nn.Module):
 
         return x, sld
 
-    def get_mean_and_logs(self, label: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+    def get_mean_and_logs(self, data: torch.Tensor, label: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """
         Get mean and logs from label
+        :param data: Batched data
         :param label: Batched label
         :return: Mean and logs
         """
-        mean_and_logs = self.project_label(label).view(-1,
-                                                       self.out_channels * 2,
-                                                       self.out_image_size,
-                                                       self.out_image_size)
-        mean_and_logs *= torch.exp(self.label_logs * 3)
-        return mean_and_logs[:, :self.out_channels, ...], mean_and_logs[:, self.out_channels:, ...]
+        h = self.prior_h.repeat(data.shape[0], 1, 1, 1)
+        h = self.learn_top_fn(h)
+
+        h += self.project_label(label).view(-1, self.out_channels * 2, 1, 1)
+        return h[:, :self.out_channels, ...], h[:, self.out_channels:, ...]
 
 
 class _CGlow(nn.Module):
@@ -688,19 +833,13 @@ class NLLLoss(nn.Module):
     def __init__(self):
         super(NLLLoss, self).__init__()
 
-    def forward(self, x: torch.Tensor, z: torch.Tensor, nll: torch.Tensor, label_logits: torch.Tensor,
-                labels: torch.Tensor) -> torch.Tensor:
+    def forward(self, nll: torch.Tensor, label_logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """
         Compute loss
-        :param x: inputs
-        :param z: latent code
         :param nll: Negative log-likelihood
         :param label_logits: Label logits
         :param labels: Labels
         :return: Loss
         """
 
-        nll = nn.BCEWithLogitsLoss()(label_logits, labels.float()) * 0.5 + torch.mean(nll) - np.log(256) * np.prod(
-            z.size()[1:])
-
-        return -nll / float(np.log(2.0) * x.size(1) * x.size(2) * x.size(3))
+        return func.binary_cross_entropy_with_logits(input=label_logits, target=labels.float()) * 0.5 + torch.mean(nll)
