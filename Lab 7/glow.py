@@ -324,32 +324,28 @@ class LinearZeros(nn.Module):
 
 class Coupling(nn.Module):
     """
-    Affine coupling layer originally used in Real NVP and described by Glow.
+    Affine coupling layer
     :arg in_channels: Number of channels in the input
-    :arg cond_channels: Number of channels in the condition
     :arg mid_channels: Number of channels in the intermediate activation in NN
     """
 
-    def __init__(self, in_channels: int, cond_channels: int, mid_channels: int):
+    def __init__(self, in_channels: int, mid_channels: int):
         super(Coupling, self).__init__()
         self.nn = NN(in_channels=in_channels,
-                     cond_channels=cond_channels,
                      mid_channels=mid_channels,
                      out_channels=2 * in_channels)
 
-    def forward(self, x: torch.Tensor, x_cond: torch.Tensor, sld: torch.Tensor, reverse: bool = False) -> Tuple[
-        torch.Tensor, ...]:
+    def forward(self, x: torch.Tensor, sld: torch.Tensor, reverse: bool = False) -> Tuple[torch.Tensor, ...]:
         """
         Affine coupling forwarding
         :param x: Batched data
-        :param x_cond: Batched condition
         :param sld: Sum of log-determinant
         :param reverse: Reverse or not
         :return: Affine coupled data and sum of log-determinant
         """
         x_id, x_change = x[:, : x.size(1) // 2, ...], x[:, x.size(1) // 2:, ...]
 
-        scale_and_translate = self.nn.forward(x=x_id, x_cond=x_cond)
+        scale_and_translate = self.nn.forward(x=x_id)
         scale, translate = scale_and_translate[:, 0::2, ...], scale_and_translate[:, 1::2, ...]
         scale = torch.sigmoid(scale + 2.)
 
@@ -373,45 +369,32 @@ class NN(nn.Module):
     """
     Small convolutional network used to compute scale and translate factors.
     :arg in_channels: Number of channels in the input
-    :arg cond_channels: Number of channels in the condition
     :arg mid_channels: Number of channels in the hidden activations
     :arg out_channels: Number of channels in the output
     """
 
-    def __init__(self, in_channels: int, cond_channels: int, mid_channels: int, out_channels: int):
+    def __init__(self, in_channels: int, mid_channels: int, out_channels: int):
         super(NN, self).__init__()
 
-        self.in_conv = Conv2d(in_channels=in_channels,
-                              out_channels=mid_channels)
-        self.in_cond_conv = Conv2d(in_channels=cond_channels,
-                                   out_channels=mid_channels)
+        self.net = nn.Sequential(
+            Conv2d(in_channels=in_channels,
+                   out_channels=mid_channels),
+            nn.ReLU(),
+            Conv2d(in_channels=mid_channels,
+                   out_channels=mid_channels,
+                   kernel_size=(1, 1)),
+            nn.ReLU(),
+            Conv2dZeros(in_channels=mid_channels,
+                        out_channels=out_channels)
+        )
 
-        self.mid_conv = Conv2d(in_channels=mid_channels,
-                               out_channels=mid_channels,
-                               kernel_size=(1, 1))
-        self.mid_cond_conv = Conv2d(in_channels=mid_channels,
-                                    out_channels=mid_channels,
-                                    kernel_size=(1, 1))
-
-        self.out_conv = Conv2dZeros(in_channels=mid_channels,
-                                    out_channels=out_channels)
-
-    def forward(self, x: torch.Tensor, x_cond: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Compute scale and translate from batched data and condition
+        Compute scale and translate from batched data
         :param x: Batched data
-        :param x_cond: Batched condition
         :return: Scale and translate as one tensor
         """
-        x_cond = self.in_cond_conv(x_cond)
-        x = self.in_conv(x) + x_cond
-        x = func.relu(x)
-
-        x_cond = self.mid_cond_conv(x_cond)
-        x = self.mid_conv(x) + x_cond
-        x = func.relu(x)
-
-        return self.out_conv(x)
+        return self.net(x)
 
 
 class FlowStep(nn.Module):
@@ -420,28 +403,24 @@ class FlowStep(nn.Module):
     Forward: ActNorm -> InvConv -> Coupling
     Reverse: Coupling -> InvConv -> ActNorm
     :arg in_channels: Number of channels in the input
-    :arg cond_channels: Number of channels in the condition
     :arg mid_channels: Number of hidden channels in the coupling layer
     """
 
-    def __init__(self, in_channels: int, cond_channels: int, mid_channels: int):
+    def __init__(self, in_channels: int, mid_channels: int):
         super(FlowStep, self).__init__()
 
         # Activation normalization, invertible 1x1 convolution, affine coupling
         self.norm = ActNorm(in_channels=in_channels)
         self.conv = InvConv(num_channels=in_channels)
         self.coup = Coupling(in_channels=in_channels // 2,
-                             cond_channels=cond_channels,
                              mid_channels=mid_channels)
 
-    def forward(self, x: torch.Tensor, x_cond: torch.Tensor, sld: torch.Tensor = None, reverse: bool = False) -> Tuple[
-        torch.Tensor, ...]:
+    def forward(self, x: torch.Tensor, sld: torch.Tensor = None, reverse: bool = False) -> Tuple[torch.Tensor, ...]:
         """
         Single flow step
         Forward: ActNorm -> InvConv -> Coupling
         Reverse: Coupling -> InvConv -> ActNorm
         :param x: Batched data
-        :param x_cond: Batched condition
         :param sld: Sum of log-determinant
         :param reverse: Reverse or not
         :return: Batched data and sum of log-determinant
@@ -450,10 +429,10 @@ class FlowStep(nn.Module):
             # Normal flow
             x, sld = self.norm.forward(x=x, sld=sld, reverse=False)
             x, sld = self.conv.forward(x=x, sld=sld, reverse=False)
-            x, sld = self.coup.forward(x=x, x_cond=x_cond, sld=sld, reverse=False)
+            x, sld = self.coup.forward(x=x, sld=sld, reverse=False)
         else:
             # Reverse flow
-            x, sld = self.coup.forward(x=x, x_cond=x_cond, sld=sld, reverse=True)
+            x, sld = self.coup.forward(x=x, sld=sld, reverse=True)
             x, sld = self.conv.forward(x=x, sld=sld, reverse=True)
             x, sld = self.norm.forward(x=x, sld=sld, reverse=True)
 
@@ -477,7 +456,6 @@ class CGlow(nn.Module):
         self.register_buffer('bounds', torch.tensor([0.95], dtype=torch.float32))
 
         self.flows = _CGlow(in_channels=3,
-                            cond_channels=1,
                             mid_channels=num_channels,
                             num_levels=num_levels,
                             num_steps=num_steps)
@@ -486,27 +464,27 @@ class CGlow(nn.Module):
         self.out_channels = 3 * (2 ** (num_levels - 1)) * 4
         self.out_image_size = image_size // (2 ** num_levels)
 
+        self.learn_top_fn = Conv2dZeros(self.out_channels * 2, self.out_channels * 2)
+        self.register_buffer(
+            'prior_h',
+            torch.zeros(1, self.out_channels * 2, self.out_image_size, self.out_image_size),
+        )
+
+        # Project label to condition
+        self.project_label = LinearZeros(in_channels=num_classes,
+                                         out_channels=self.out_channels * 2)
+
         # Project latent code to label
         self.project_latent = LinearZeros(in_channels=self.out_channels,
                                           out_channels=num_classes)
 
         self.num_classes = num_classes
         self.image_size = image_size
-        self.label_to_condition = nn.Sequential(
-            nn.Linear(in_features=num_classes,
-                      out_features=16 * 16,
-                      bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=16 * 16,
-                      out_features=32 * 32,
-                      bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(in_features=32 * 32,
-                      out_features=image_size * image_size)
-        )
 
-    def forward(self, x_label: torch.Tensor, x: torch.Tensor = None, reverse: bool = False) -> Optional[
-        Tuple[torch.Tensor, ...] or torch.Tensor]:
+    def forward(self,
+                x_label: torch.Tensor,
+                x: torch.Tensor = None,
+                reverse: bool = False) -> Optional[Tuple[torch.Tensor, ...] or torch.Tensor]:
         """
         CGlow forwarding
         :param x: Batched data
@@ -514,26 +492,23 @@ class CGlow(nn.Module):
         :param reverse: Reverse or not
         :return: Batched data and sum of log-determinant
         """
-        x_cond = self.label_to_condition(x_label).view(-1, 1, self.image_size, self.image_size)
         if not reverse:
-            return self.normal_flow(x=x, x_label=x_label, x_cond=x_cond)
+            return self.normal_flow(x=x, x_label=x_label)
         else:
-            return self.reverse_flow(z=None, z_label=x_label, z_cond=x_cond)
+            return self.reverse_flow(z=None, z_label=x_label)
 
-    def normal_flow(self, x: torch.Tensor, x_label: torch.Tensor, x_cond: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+    def normal_flow(self, x: torch.Tensor, x_label: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """
         Normal flow
         :param x: Batched data
         :param x_label: Batched labels
-        :param x_cond: Batched conditions
         :return: Batched latent & negative log likelihood & label logits
         """
         x, sld = self._pre_process(x)
 
-        z, _, sld = self.flows.forward(x=x, x_cond=x_cond, sld=sld, reverse=False)
+        z, sld = self.flows.forward(x=x, sld=sld, reverse=False)
 
-        mean = torch.zeros_like(z, device=z.device)
-        logs = mean.clone()
+        mean, logs = self.get_mean_and_logs(data=x, label=x_label)
         sld += GaussianDiag.log_prob(mean=mean, logs=logs, x=z)
         nll = (-sld) / float(np.log(2.0) * x.size(0) * x.size(1) * x.size(2))
 
@@ -542,39 +517,38 @@ class CGlow(nn.Module):
 
         return z, nll, label_logits
 
-    def reverse_flow(self, z_label: torch.Tensor, z_cond: torch.Tensor, z: torch.Tensor = None) -> torch.Tensor:
+    def reverse_flow(self, z_label: torch.Tensor, z: torch.Tensor = None) -> torch.Tensor:
         """
         Reverse flow
         :param z: Latent code
         :param z_label: Batched labels
-        :param z_cond: Batched conditions
         :return: Batched images
         """
         with torch.no_grad():
             if z is None:
-                mean = torch.zeros(z_label.size(0),
-                                   self.out_channels,
-                                   self.out_image_size,
-                                   self.out_image_size,
-                                   device=z_label.device)
-                logs = mean.clone()
+                z = torch.zeros(z_label.size(0), device=z_label.device)
+                mean, logs = self.get_mean_and_logs(data=z, label=z_label)
                 z = GaussianDiag.sample(mean, logs)
             sld = torch.zeros(z.size(0), device=z.device)
 
-            # Get latent condition
-            next_flow = self.flows
-            while next_flow is not None:
-                try:
-                    z_cond = next_flow.squeeze_cond.forward(x=z_cond, reverse=False)
-                    z_cond, _ = next_flow.split_cond.forward(x=z_cond, sld=sld, reverse=False)
-                except AttributeError:
-                    pass
-                next_flow = next_flow.next
-
-            x, _, _ = self.flows.forward(x=z, x_cond=z_cond, sld=sld, reverse=True)
+            x, _ = self.flows.forward(x=z, sld=sld, reverse=True)
         return x
 
-    def _pre_process(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+    def get_mean_and_logs(self, data: torch.Tensor, label: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+        """
+        Get mean and logs from label
+        :param data: Batched data
+        :param label: Batched labels
+        :return: Mean and logs
+        """
+        h = self.prior_h.repeat(data.shape[0], 1, 1, 1)
+        channels = h.size(1)
+        h = self.learn_top_fn(h)
+        h += self.project_label(label).view(h.shape[0], channels, 1, 1)
+        return h[:, : channels // 2, ...], h[:, channels // 2:, ...]
+
+    @staticmethod
+    def _pre_process(x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """
         Preprocess x to x - 0.5 + U(0, 1/256)
         :param x: Batched data
@@ -596,13 +570,11 @@ class _CGlow(nn.Module):
     :arg num_steps: Number of steps of flow for each level
     """
 
-    def __init__(self, in_channels: int, cond_channels: int, mid_channels: int, num_levels: int, num_steps: int):
+    def __init__(self, in_channels: int, mid_channels: int, num_levels: int, num_steps: int):
         super(_CGlow, self).__init__()
 
         self.squeeze = Squeeze2d()
-        self.squeeze_cond = Squeeze2d()
         self.steps = nn.ModuleList([FlowStep(in_channels=in_channels * 4,
-                                             cond_channels=cond_channels * 4,
                                              mid_channels=mid_channels)
                                     for _ in range(num_steps)])
 
@@ -610,76 +582,66 @@ class _CGlow(nn.Module):
 
         if num_levels > 1:
             self.split = Split2d(num_channels=in_channels * 4)
-            self.split_cond = Split2d(num_channels=cond_channels * 4)
             self.next = _CGlow(in_channels=in_channels * 2,
-                               cond_channels=cond_channels * 2,
                                mid_channels=mid_channels,
                                num_levels=num_levels - 1,
                                num_steps=num_steps)
         else:
             self.next = None
 
-    def forward(self, x: torch.Tensor, x_cond: torch.Tensor, sld: torch.Tensor, reverse: bool = False) -> Tuple[
-        torch.Tensor, ...]:
+    def forward(self, x: torch.Tensor, sld: torch.Tensor, reverse: bool = False) -> Tuple[torch.Tensor, ...]:
         """
         Forwarding of each level
         :param x: Batched data
-        :param x_cond: Batched condition
         :param sld: Sum of log-determinant
         :param reverse: Reverse or not
-        :return: Batched data & batched conditions & sum of log-determinant
+        :return: Batched data and sum of log-determinant
         """
         if not reverse:
-            return self.normal_flow(x=x, x_cond=x_cond, sld=sld)
+            return self.normal_flow(x=x, sld=sld)
         else:
-            return self.reverse_flow(x=x, x_cond=x_cond, sld=sld)
+            return self.reverse_flow(x=x, sld=sld)
 
-    def normal_flow(self, x: torch.Tensor, x_cond: torch.Tensor, sld: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+    def normal_flow(self, x: torch.Tensor, sld: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """
         Normal flow
         :param x: Batched data
-        :param x_cond: Batched condition
         :param sld: Sum of log-determinant
-        :return: Batched data & batched conditions & sum of log-determinant
+        :return: Batched data and sum of log-determinant
         """
         x = self.squeeze.forward(x=x, reverse=False)
-        x_cond = self.squeeze_cond.forward(x=x_cond, reverse=False)
 
         for step in self.steps:
-            x, sld = step.forward(x=x, x_cond=x_cond, sld=sld, reverse=False)
+            x, sld = step.forward(x=x, sld=sld, reverse=False)
 
         try:
             x, sld = self.split.forward(x=x, sld=sld, reverse=False)
-            x_cond, sld = self.split_cond.forward(x=x_cond, sld=sld, reverse=False)
-            x, x_cond, sld = self.next.forward(x=x, x_cond=x_cond, sld=sld, reverse=False)
+            x, sld = self.next.forward(x=x, sld=sld, reverse=False)
         except AttributeError:
             pass
 
-        return x, x_cond, sld
+        return x, sld
 
-    def reverse_flow(self, x: torch.Tensor, x_cond: torch.Tensor, sld: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+    def reverse_flow(self, x: torch.Tensor, sld: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """
         Reverse flow
         :param x: Batched data
-        :param x_cond: Batched condition
         :param sld: Sum of log-determinant
-        :return: Batched data & batched conditions & sum of log-determinant
+        :return: Batched data and sum of log-determinant
         """
         with torch.no_grad():
             try:
-                x, x_cond, sld = self.next.forward(x=x, x_cond=x_cond, sld=sld, reverse=True)
+                x, sld = self.next.forward(x=x, sld=sld, reverse=True)
                 x, sld = self.split.forward(x=x, sld=sld, reverse=True)
-                x_cond, sld = self.split_cond.forward(x=x_cond, sld=sld, reverse=True)
             except AttributeError:
                 pass
 
             for step in reversed(self.steps):
-                x, sld = step.forward(x=x, x_cond=x_cond, sld=sld, reverse=True)
+                x, sld = step.forward(x=x, sld=sld, reverse=True)
 
             x = self.squeeze.forward(x=x, reverse=True)
-            x_cond = self.squeeze_cond.forward(x=x_cond, reverse=True)
 
-            return x, x_cond, sld
+            return x, sld
 
 
 class Squeeze2d(nn.Module):
@@ -815,5 +777,4 @@ class NLLLoss(nn.Module):
         :param labels: Labels
         :return: Loss
         """
-
         return func.binary_cross_entropy_with_logits(input=label_logits, target=labels.float()) * 0.5 + torch.mean(nll)
