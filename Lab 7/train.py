@@ -17,22 +17,26 @@ def train_cgan(data_loader: DataLoader,
                discriminator: Optional[DCDiscriminator or SADiscriminator or SRDiscriminator],
                optimizer_g: optim,
                optimizer_d: optim,
+               scheduler_g: optim.lr_scheduler,
+               scheduler_d: optim.lr_scheduler,
                num_classes: int,
                epoch: int,
                args: Namespace,
                training_device: device) -> Tuple[float, float]:
     """
     Train cGAN
-    :param data_loader: train data loader
-    :param generator: generator
-    :param discriminator: discriminator
-    :param optimizer_g: optimizer for generator
-    :param optimizer_d: optimizer for discriminator
-    :param num_classes: number of classes (object IDs)
-    :param epoch: current epoch
-    :param args: all arguments
-    :param training_device: training_device
-    :return: total generator loss and total discriminator loss
+    :param data_loader: Training data loader
+    :param generator: Generator
+    :param discriminator: Discriminator
+    :param optimizer_g: Optimizer for generator
+    :param optimizer_d: Optimizer for discriminator
+    :param scheduler_g: Learning rate scheduler for generator
+    :param scheduler_d: Learning rate scheduler for discriminator
+    :param num_classes: Number of classes (object IDs)
+    :param epoch: Current epoch
+    :param args: All arguments
+    :param training_device: Training device
+    :return: Total generator loss and total discriminator loss
     """
     generator.train()
     discriminator.train()
@@ -61,8 +65,6 @@ def train_cgan(data_loader: DataLoader,
         ############################
         # (1) Update D network
         ###########################
-        discriminator.zero_grad()
-
         # Train with all-real batch
         # Format batch
         images = images.to(training_device)
@@ -124,6 +126,7 @@ def train_cgan(data_loader: DataLoader,
             loss_d_fake = outputs.mean()
         loss_d_fake.backward()
         optimizer_d.step()
+        scheduler_d.step()
 
         # Compute loss of discriminator as sum over the fake and the real batches
         loss_d = loss_d_real + loss_d_fake
@@ -132,8 +135,6 @@ def train_cgan(data_loader: DataLoader,
         ############################
         # (2) Update G network: maximize log(D(G(z)))
         ###########################
-        generator.zero_grad()
-
         # Since we just updated discriminator, perform another forward pass of all-fake batch through discriminator
         outputs = discriminator.forward(fake_outputs, real_labels)
         labels = torch.full((batch_size, 1), 1.0, dtype=torch.float, device=training_device)
@@ -154,6 +155,7 @@ def train_cgan(data_loader: DataLoader,
         optimizer_g.zero_grad()
         loss_g.backward()
         optimizer_g.step()
+        scheduler_g.step()
 
         if batch_idx % 50 == 0:
             output_string = f'[{epoch + 1}/{args.epochs}][{batch_idx + 1}/{len(data_loader)}]   ' + \
@@ -166,20 +168,22 @@ def train_cgan(data_loader: DataLoader,
 def train_cnf(data_loader: DataLoader,
               normalizing_flow: CGlow,
               optimizer: optim,
+              scheduler: optim.lr_scheduler,
               loss_fn: NLLLoss,
               epoch: int,
               args: Namespace,
               training_device: device) -> float:
     """
     Train cNF
-    :param data_loader: training data loader
-    :param normalizing_flow: conditional normalizing flow model
-    :param optimizer: glow optimizer
-    :param loss_fn: loss function
-    :param epoch: current epoch
-    :param args: all arguments
-    :param training_device: training device
-    :return: total loss
+    :param data_loader: Training data loader
+    :param normalizing_flow: Conditional normalizing flow model
+    :param optimizer: Glow optimizer
+    :param scheduler: Learning rate scheduler
+    :param loss_fn: Loss function
+    :param epoch: Current epoch
+    :param args: All arguments
+    :param training_device: Training device
+    :return: Total loss
     """
     normalizing_flow.train()
     total_loss = 0.0
@@ -196,7 +200,6 @@ def train_cnf(data_loader: DataLoader,
         loss = loss_fn.forward(nll=nll, label_logits=label_logits, labels=labels)
         total_loss += loss.data.cpu().item()
 
-        normalizing_flow.zero_grad()
         optimizer.zero_grad()
         loss.backward()
 
@@ -206,6 +209,7 @@ def train_cnf(data_loader: DataLoader,
             nn.utils.clip_grad_norm_(normalizing_flow.parameters(), args.grad_norm_clip)
 
         optimizer.step()
+        scheduler.step()
 
         if batch_idx % 50 == 0:
             debug_log(f'[{epoch + 1}/{args.epochs}][{batch_idx + 1}/{len(data_loader)}]   Loss: {loss}',

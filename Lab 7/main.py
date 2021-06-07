@@ -30,13 +30,13 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
                             training_device: device) -> None:
     """
     Train and test cGAN
-    :param train_dataset: training dataset
-    :param train_loader: training data loader
-    :param test_loader: testing data loader
-    :param evaluator: evaluator
-    :param num_classes: number of classes (object IDs)
-    :param args: all arguments
-    :param training_device: training device
+    :param train_dataset: Training dataset
+    :param train_loader: Training data loader
+    :param test_loader: Testing data loader
+    :param evaluator: Evaluator
+    :param num_classes: Number of classes (object IDs)
+    :param args: All arguments
+    :param training_device: Training device
     :return: None
     """
     # Setup models
@@ -72,6 +72,8 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
 
     optimizer_g = optim.Adam(generator.parameters(), lr=args.learning_rate_generator, betas=(0.5, 0.999))
     optimizer_d = optim.Adam(discriminator.parameters(), lr=args.learning_rate_discriminator, betas=(0.5, 0.999))
+    scheduler_g = torch.optim.lr_scheduler.LambdaLR(optimizer_g, lr_lambda=lambda e: min(1.0, (e + 1) / args.warmup))
+    scheduler_d = torch.optim.lr_scheduler.LambdaLR(optimizer_d, lr_lambda=lambda e: min(1.0, (e + 1) / args.warmup))
 
     # Setup average losses/accuracies container
     generator_losses = [0.0 for _ in range(args.epochs)]
@@ -89,6 +91,8 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
                                                     discriminator=discriminator,
                                                     optimizer_g=optimizer_g,
                                                     optimizer_d=optimizer_d,
+                                                    scheduler_g=scheduler_g,
+                                                    scheduler_d=scheduler_d,
                                                     num_classes=num_classes,
                                                     epoch=epoch,
                                                     args=args,
@@ -149,13 +153,13 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
                            training_device: device) -> None:
     """
     Train and test cNF
-    :param train_dataset: training dataset
-    :param train_loader: training data loader
-    :param test_loader: testing data loader
-    :param evaluator: evaluator
-    :param num_classes: number of different conditions
-    :param args: all arguments
-    :param training_device: training device
+    :param train_dataset: Training dataset
+    :param train_loader: Training data loader
+    :param test_loader: Testing data loader
+    :param evaluator: Evaluator
+    :param num_classes: Number of different conditions
+    :param args: All arguments
+    :param training_device: Training device
     :return: None
     """
     # Setup models
@@ -171,6 +175,7 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
         normalizing_flow.load_state_dict(checkpoint['normalizing_flow'])
 
     optimizer = optim.Adamax(normalizing_flow.parameters(), lr=args.learning_rate_normalizing_flow, weight_decay=5e-5)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda e: min(1.0, (e + 1) / args.warmup))
     loss_fn = NLLLoss().to(training_device)
 
     # Setup average losses/accuracies container
@@ -186,6 +191,7 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
             total_loss = train_cnf(data_loader=train_loader,
                                    normalizing_flow=normalizing_flow,
                                    optimizer=optimizer,
+                                   scheduler=scheduler,
                                    loss_fn=loss_fn,
                                    epoch=epoch,
                                    args=args,
@@ -236,11 +242,11 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
                               training_device: device) -> None:
     """
     Train and inference cGlow
-    :param train_dataset: training dataset
-    :param train_loader: training data loader
-    :param num_classes: number of different conditions
-    :param args: all arguments
-    :param training_device: training device
+    :param train_dataset: Training dataset
+    :param train_loader: Training data loader
+    :param num_classes: Number of different conditions
+    :param args: All arguments
+    :param training_device: Training device
     :return: None
     """
     # Setup models
@@ -256,6 +262,7 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
         normalizing_flow.load_state_dict(checkpoint['normalizing_flow'])
 
     optimizer = optim.Adamax(normalizing_flow.parameters(), lr=args.learning_rate_normalizing_flow, weight_decay=5e-5)
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda e: min(1.0, (e + 1) / args.warmup))
     loss_fn = NLLLoss().to(training_device)
 
     # Setup average losses container
@@ -270,6 +277,7 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
             total_loss = train_cnf(data_loader=train_loader,
                                    normalizing_flow=normalizing_flow,
                                    optimizer=optimizer,
+                                   scheduler=scheduler,
                                    loss_fn=loss_fn,
                                    epoch=epoch,
                                    args=args,
@@ -324,6 +332,7 @@ def main() -> None:
     info_log(f'Learning rate of generator: {args.learning_rate_generator}', args.verbosity)
     info_log(f'Learning rate of normalizing flow: {args.learning_rate_normalizing_flow}', args.verbosity)
     info_log(f'Number of epochs: {args.epochs}', args.verbosity)
+    info_log(f'Number of warmup epochs: {args.warmup}', args.verbosity)
     info_log(f'Perform task: {args.task}', args.verbosity)
     info_log(f'Which model will be used: {args.model}', args.verbosity)
     info_log(f'Only inference or not: {True if args.inference else False}', args.verbosity)

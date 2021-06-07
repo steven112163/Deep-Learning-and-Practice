@@ -102,7 +102,6 @@ class InvConv(nn.Module):
     """
     Invertible 1x1 Convolution for 2D inputs.
     Originally described in Glow (https://arxiv.org/abs/1807.03039).
-    Does not support LU-decomposed version.
     :arg num_channels: Number of channels in the input and output
     """
 
@@ -443,7 +442,7 @@ class CGlow(nn.Module):
     """
     Conditional Glow model
     :arg num_channels: Number of channels in the hidden layers
-    :arg num_levels: Number of levels in the model (number of _CGlow class)
+    :arg num_levels: Number of levels in the model (number of _CGlow classes)
     :arg num_steps: Number of flow steps in each level
     :arg num_classes: Number of classes in the condition
     :arg image_size: Image size
@@ -532,7 +531,7 @@ class CGlow(nn.Module):
             sld = torch.zeros(z.size(0), device=z.device)
 
             x, _ = self.flows.forward(x=z, sld=sld, reverse=True)
-        return x
+        return torch.sigmoid(x + 0.5)
 
     def get_mean_and_logs(self, data: torch.Tensor, label: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """
@@ -554,6 +553,7 @@ class CGlow(nn.Module):
         :param x: Batched data
         :return: Preprocessed data and sum of log-determinant
         """
+        x -= 0.5
         x += torch.zeros_like(x).uniform_(1.0 / 256)
         sld = float(-np.log(256.) * x.size(1) * x.size(2) * x.size(3)) * torch.ones(x.size(0), device=x.device)
 
@@ -697,7 +697,7 @@ class Split2d(nn.Module):
         """
         Compute mean and logs from data
         :param x: Batched data
-        :return: mean and logs
+        :return: Mean and logs
         """
         mean_and_logs = self.conv(x)
         mean_and_logs = mean_and_logs * torch.exp(self.logs * 3)

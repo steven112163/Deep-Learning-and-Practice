@@ -23,13 +23,13 @@ def test_cgan(data_loader: DataLoader,
               training_device: device) -> Tuple[torch.Tensor, float]:
     """
     Test cGAN
-    :param data_loader: test data loader
-    :param generator: generator
-    :param num_classes: number of classes (object IDs)
-    :param epoch: current epoch
-    :param args: all arguments
-    :param training_device: training_device
-    :return: generated images and total accuracy of all batches
+    :param data_loader: Testing data loader
+    :param generator: Generator
+    :param num_classes: Number of classes (object IDs)
+    :param epoch: Current epoch
+    :param args: All arguments
+    :param training_device: Training device
+    :return: Generated images and total accuracy of all batches
     """
     generator.eval()
     total_accuracy = 0.0
@@ -93,13 +93,13 @@ def test_cnf(data_loader: DataLoader,
              training_device: device) -> Tuple[torch.Tensor, float]:
     """
     Test cNF
-    :param data_loader: testing data loader
-    :param normalizing_flow: conditional normalizing flow model
-    :param epoch: current epoch
-    :param evaluator: evaluator
-    :param args: all arguments
-    :param training_device: training device
-    :return: generated images and total accuracy
+    :param data_loader: Testing data loader
+    :param normalizing_flow: Conditional normalizing flow model
+    :param epoch: Current epoch
+    :param evaluator: Evaluator
+    :param args: All arguments
+    :param training_device: Training device
+    :return: Generated images and total accuracy
     """
     normalizing_flow.eval()
     total_accuracy = 0.0
@@ -107,10 +107,8 @@ def test_cnf(data_loader: DataLoader,
     for batch_idx, batch_data in enumerate(data_loader):
         labels = batch_data
         labels = labels.to(training_device).type(torch.float)
-        batch_size = len(labels)
 
         fake_images = normalizing_flow.forward(x=None, x_label=labels, reverse=True)
-        fake_images = torch.sigmoid(fake_images)
 
         transformed_images = torch.randn(0, 3, args.image_size, args.image_size)
         transformation = transforms.Compose([transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
@@ -139,11 +137,11 @@ def inference_celeb(train_dataset: CelebALoader,
                     training_device: device) -> None:
     """
     Use cNF to inference celebrity data with 3 applications
-    :param train_dataset: training dataset
-    :param normalizing_flow: conditional normalizing flow model
-    :param num_classes: number of classes (attributes)
-    :param args: all arguments
-    :param training_device: training device
+    :param train_dataset: Training dataset
+    :param normalizing_flow: Conditional normalizing flow model
+    :param num_classes: Number of classes (attributes)
+    :param args: All arguments
+    :param training_device: Training device
     :return: None
     """
     normalizing_flow.eval()
@@ -159,7 +157,6 @@ def inference_celeb(train_dataset: CelebALoader,
 
     # Produce fake images
     fake_images = normalizing_flow.forward(x=None, x_label=labels, reverse=True)
-    fake_images = torch.sigmoid(fake_images)
 
     # Save fake images for application 1
     generated_images = torch.randn(0, 3, args.image_size, args.image_size)
@@ -196,7 +193,6 @@ def inference_celeb(train_dataset: CelebALoader,
             image = normalizing_flow.forward(x=first_z + num_of_intervals * interval_z,
                                              x_label=first_label + num_of_intervals * interval_label,
                                              reverse=True)
-            image = torch.sigmoid(image)
             linear_images = torch.cat([linear_images,
                                        image.cpu().detach().view(1, 3, args.image_size, args.image_size)], 0)
     save_image(make_grid(linear_images, nrow=5), f'figure/task_2/{args.model}_app_2.jpg')
@@ -228,7 +224,6 @@ def inference_celeb(train_dataset: CelebALoader,
         image = normalizing_flow.forward(x=neg_z + num_of_intervals * interval_z,
                                          x_label=neg_label + num_of_intervals * interval_label,
                                          reverse=True)
-        image = torch.sigmoid(image)
         manipulated_images = torch.cat([manipulated_images,
                                         image.cpu().detach().view(1, 3, args.image_size, args.image_size)], 0)
     save_image(make_grid(manipulated_images, nrow=5), f'figure/task_2/{args.model}_app_3.jpg')

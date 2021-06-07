@@ -18,6 +18,7 @@
 |`'-lrg', '--learning_rate_generator'`|Learning rate of generator|0.0002|
 |`'-lrnf', '--learning_rate_normalizing_flow'`|Learning rate of normalizing flow|0.001|
 |`'-e', '--epochs'`|Number of epochs|20|
+|`'-wu', '--warmup'`|Number of warmup epochs|10|
 |`'-t', '--task'`|Task 1 or task 2|1|
 |`'-m', '--model'`|cGAN or cNF|'dcgan'|
 |`'-inf', '--inference'`|Only infer or not|0|
