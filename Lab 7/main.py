@@ -178,15 +178,15 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
         info_log('Start training', args.verbosity)
         for epoch in range(args.epochs):
             # Train
-            # total_loss = train_cnf(data_loader=train_loader,
-            #                        normalizing_flow=normalizing_flow,
-            #                        optimizer=optimizer,
-            #                        loss_fn=loss_fn,
-            #                        epoch=epoch,
-            #                        args=args,
-            #                        training_device=training_device)
-            # losses[epoch] = total_loss / len(train_dataset)
-            # print(f'[{epoch + 1}/{args.epochs}]   Average loss: {losses[epoch]}')
+            total_loss = train_cnf(data_loader=train_loader,
+                                   normalizing_flow=normalizing_flow,
+                                   optimizer=optimizer,
+                                   loss_fn=loss_fn,
+                                   epoch=epoch,
+                                   args=args,
+                                   training_device=training_device)
+            losses[epoch] = total_loss / len(train_dataset)
+            print(f'[{epoch + 1}/{args.epochs}]   Average loss: {losses[epoch]}')
 
             # Test
             generated_image, total_accuracy = test_cnf(data_loader=test_loader,
