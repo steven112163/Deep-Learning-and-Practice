@@ -17,7 +17,7 @@
 |`'-lrd', '--learning_rate_discriminator'`|Learning rate of discriminator|0.0002|
 |`'-lrg', '--learning_rate_generator'`|Learning rate of generator|0.0002|
 |`'-lrnf', '--learning_rate_normalizing_flow'`|Learning rate of normalizing flow|0.0005|
-|`'-e', '--epochs'`|Number of epochs|20|
+|`'-e', '--epochs'`|Number of epochs|300|
 |`'-wu', '--warmup'`|Number of warmup epochs|10|
 |`'-t', '--task'`|Task 1 or task 2|1|
 |`'-m', '--model'`|cGAN or cNF|'dcgan'|
