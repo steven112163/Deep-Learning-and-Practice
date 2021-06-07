@@ -486,23 +486,6 @@ class CGlow(nn.Module):
         self.out_channels = 3 * (2 ** (num_levels - 1)) * 4
         self.out_image_size = image_size // (2 ** num_levels)
 
-        self.learn_top_fn = Conv2dZeros(self.out_channels * 2, self.out_channels * 2)
-        self.register_buffer(
-            "prior_h",
-            torch.zeros(
-                [
-                    1,
-                    self.out_channels * 2,
-                    self.out_image_size,
-                    self.out_image_size,
-                ]
-            ),
-        )
-
-        # Project label to mean and variance
-        self.project_label = LinearZeros(in_channels=num_classes,
-                                         out_channels=self.out_channels * 2)
-
         # Project latent code to label
         self.project_latent = LinearZeros(in_channels=self.out_channels,
                                           out_channels=num_classes)
@@ -549,7 +532,8 @@ class CGlow(nn.Module):
 
         z, _, sld = self.flows.forward(x=x, x_cond=x_cond, sld=sld, reverse=False)
 
-        mean, logs = self.get_mean_and_logs(data=x, label=x_label)
+        mean = torch.zeros_like(z, device=z.device)
+        logs = mean.clone()
         sld += GaussianDiag.log_prob(mean=mean, logs=logs, x=z)
         nll = (-sld) / float(np.log(2.0) * x.size(0) * x.size(1) * x.size(2))
 
@@ -568,8 +552,12 @@ class CGlow(nn.Module):
         """
         with torch.no_grad():
             if z is None:
-                z = torch.zeros(z_label.size(0))
-                mean, logs = self.get_mean_and_logs(data=z, label=z_label)
+                mean = torch.zeros(z_label.size(0),
+                                   self.out_channels,
+                                   self.image_size,
+                                   self.image_size,
+                                   device=z_label.device)
+                logs = mean.clone()
                 z = GaussianDiag.sample(mean, logs)
             sld = torch.zeros(z.size(0), device=z.device)
 
@@ -592,24 +580,10 @@ class CGlow(nn.Module):
         :param x: Batched data
         :return: Preprocessed data and sum of log-determinant
         """
-        x -= 0.5
         x += torch.zeros_like(x).uniform_(1.0 / 256)
         sld = float(-np.log(256.) * x.size(1) * x.size(2) * x.size(3)) * torch.ones(x.size(0), device=x.device)
 
         return x, sld
-
-    def get_mean_and_logs(self, data: torch.Tensor, label: torch.Tensor) -> Tuple[torch.Tensor, ...]:
-        """
-        Get mean and logs from label
-        :param data: Batched data
-        :param label: Batched label
-        :return: Mean and logs
-        """
-        h = self.prior_h.repeat(data.shape[0], 1, 1, 1)
-        h = self.learn_top_fn(h)
-
-        h += self.project_label(label).view(-1, self.out_channels * 2, 1, 1)
-        return h[:, :self.out_channels, ...], h[:, self.out_channels:, ...]
 
 
 class _CGlow(nn.Module):
