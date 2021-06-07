@@ -554,8 +554,8 @@ class CGlow(nn.Module):
             if z is None:
                 mean = torch.zeros(z_label.size(0),
                                    self.out_channels,
-                                   self.image_size,
-                                   self.image_size,
+                                   self.out_image_size,
+                                   self.out_image_size,
                                    device=z_label.device)
                 logs = mean.clone()
                 z = GaussianDiag.sample(mean, logs)
