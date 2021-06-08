@@ -7,8 +7,8 @@
 ## Arguments
 |Argument|Description|Default|
 |---|---|---|
-|`'-b', '--batch_size'`|Batch size|32|
-|`'-i', '--image_size'`|Image size|128|
+|`'-b', '--batch_size'`|Batch size|64|
+|`'-i', '--image_size'`|Image size|64|
 |`'-w', '--width'`|Dimension of the hidden layers in normalizing flow|128|
 |`'-d', '--depth'`|Depth of the normalizing flow|8|
 |`'-n', '--num_levels'`|Number of levels in normalizing flow|3|

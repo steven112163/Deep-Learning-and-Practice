@@ -53,8 +53,8 @@ def parse_arguments() -> Namespace:
     :return: arguments
     """
     parser = ArgumentParser(description='cGAN & cNF')
-    parser.add_argument('-b', '--batch_size', default=32, type=int, help='Batch size')
-    parser.add_argument('-i', '--image_size', default=128, type=int, help='Image size')
+    parser.add_argument('-b', '--batch_size', default=64, type=int, help='Batch size')
+    parser.add_argument('-i', '--image_size', default=64, type=int, help='Image size')
     parser.add_argument('-w', '--width', default=128, type=int,
                         help='Dimension of the hidden layers in normalizing flow')
     parser.add_argument('-d', '--depth', default=8, type=int, help='Depth of the normalizing flow')
