@@ -64,9 +64,9 @@ class ActNorm(nn.Module):
         :return: Scaled data and sum of log-determinant
         """
         if not reverse:
-            x *= torch.exp(self.logs)
+            x *= self.logs.exp()
         else:
-            x *= torch.exp(-self.logs)
+            x *= (-self.logs).exp()
 
         if sld is not None:
             ld = self.logs.sum() * x.size(2) * x.size(3)
@@ -144,7 +144,7 @@ class InvConv(nn.Module):
         u = self.upper * self.l_mask.transpose(0, 1).contiguous()
         u += torch.diag(self.sign_s * torch.exp(self.log_s))
 
-        ld = torch.sum(self.log_s) * x.size(2) * x.size(3)
+        ld = self.log_s.sum() * x.size(2) * x.size(3)
 
         if not reverse:
             weight = torch.matmul(self.p, torch.matmul(lower, u)).view(self.num_channels, self.num_channels, 1, 1)
@@ -334,6 +334,7 @@ class Coupling(nn.Module):
                      cond_channels=cond_channels,
                      mid_channels=mid_channels,
                      out_channels=2 * in_channels)
+        self.scale = nn.Parameter(torch.ones(in_channels, 1, 1))
 
     def forward(self,
                 x: torch.Tensor,
@@ -348,21 +349,19 @@ class Coupling(nn.Module):
         :param reverse: Reverse or not
         :return: Affine coupled data and sum of log-determinant
         """
-        x_id, x_change = x[:, : x.size(1) // 2, ...], x[:, x.size(1) // 2:, ...]
+        x_id, x_change = x.chunk(2, dim=1)
 
         scale_and_translate = self.nn.forward(x=x_id, x_cond=x_cond)
         scale, translate = scale_and_translate[:, 0::2, ...], scale_and_translate[:, 1::2, ...]
-        scale = torch.sigmoid(scale + 2.)
+        scale = self.scale * torch.tanh(scale)
 
         # Scale and translate
-        ld = torch.sum(scale.log(), dim=[1, 2, 3])
+        ld = scale.flatten(1).sum(-1)
         if not reverse:
-            x_change += translate
-            x_change *= scale
+            x_change = scale.exp() * x_change + translate
             sld += ld
         else:
-            x_change /= scale
-            x_change -= translate
+            x_change = (x_change - translate) * scale.mul(-1).exp()
             sld -= ld
 
         x = torch.cat((x_id, x_change), dim=1)
@@ -385,16 +384,14 @@ class NN(nn.Module):
         self.in_conv = Conv2d(in_channels=in_channels,
                               out_channels=mid_channels)
         self.in_cond_conv = Conv2d(in_channels=cond_channels,
-                                   out_channels=mid_channels)
-        self.in_norm = nn.BatchNorm2d(num_features=mid_channels)
+                                   out_channels=in_channels)
 
         self.mid_conv = Conv2d(in_channels=mid_channels,
                                out_channels=mid_channels,
                                kernel_size=(1, 1))
-        self.mid_cond_conv = Conv2d(in_channels=mid_channels,
+        self.mid_cond_conv = Conv2d(in_channels=cond_channels,
                                     out_channels=mid_channels,
                                     kernel_size=(1, 1))
-        self.mid_norm = nn.BatchNorm2d(num_features=mid_channels)
 
         self.out_conv = Conv2dZeros(in_channels=mid_channels,
                                     out_channels=out_channels)
@@ -406,15 +403,11 @@ class NN(nn.Module):
         :param x_cond: Batched conditions
         :return: Scale and translate as one tensor
         """
-        x_cond = self.in_cond_conv(x_cond)
-        x_cond = func.relu(x_cond)
-        x = self.in_conv(x) + x_cond
-        x = func.relu(self.in_norm(x))
+        x = self.in_conv(x + self.in_cond_conv(x_cond))
+        x = func.relu(x)
 
-        x_cond = self.mid_cond_conv(x_cond)
-        x_cond = func.relu(x_cond)
-        x = self.mid_conv(x) + x_cond
-        x = func.relu(self.mid_norm(x))
+        x = self.mid_conv(x + self.mid_cond_conv(x_cond))
+        x = func.relu(x)
 
         return self.out_conv(x)
 
@@ -735,7 +728,7 @@ class GaussianDiag:
         :return: Batched log-likelihood
         """
         likelihood = GaussianDiag.likelihood(mean=mean, logs=logs, x=x)
-        return torch.sum(likelihood, dim=[1, 2, 3])
+        return torch.sum(likelihood, dim=[1, 2, 3]) - np.log(256.0) * np.prod(x.size()[1:])
 
     @staticmethod
     def sample(mean: torch.Tensor, logs: torch.Tensor) -> torch.Tensor:
@@ -764,4 +757,4 @@ class NLLLoss(nn.Module):
         :param labels: Labels
         :return: Loss
         """
-        return func.binary_cross_entropy_with_logits(input=label_logits, target=labels.float()) * 0.01 + torch.mean(nll)
+        return func.binary_cross_entropy_with_logits(input=label_logits, target=labels.float()) * 0.05 + torch.mean(nll)
