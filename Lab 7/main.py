@@ -114,7 +114,6 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
                                                         args=args,
                                                         training_device=training_device)
             accuracies[epoch] = total_accuracy / len(test_loader)
-            print(f'[{epoch + 1}/{args.epochs}]   Average accuracy: {accuracies[epoch]:.2f}')
 
             # New Test
             new_generated_image, total_accuracy = test_cgan(data_loader=new_test_loader,
@@ -125,6 +124,8 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
                                                             args=args,
                                                             training_device=training_device)
             new_accuracies[epoch] = total_accuracy / len(new_test_loader)
+
+            print(f'[{epoch + 1}/{args.epochs}]   Average accuracy: {accuracies[epoch]:.2f}')
             print(f'[{epoch + 1}/{args.epochs}]   New Average accuracy: {new_accuracies[epoch]:.2f}')
 
             # Save generator and discriminator, and plot test image
@@ -157,28 +158,29 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
     else:
         # Start inferring
         info_log('Start inferring', args.verbosity)
-        generated_image, total_accuracy = test_cgan(data_loader=test_loader,
-                                                    generator=generator,
-                                                    num_classes=num_classes,
-                                                    epoch=0,
-                                                    evaluator=evaluator,
-                                                    args=args,
-                                                    training_device=training_device)
-        total_accuracy /= len(test_loader)
-        save_image(make_grid(generated_image, nrow=8), f'figure/task_1/{args.model}_{total_accuracy:.2f}.png')
-        print(f'Average accuracy: {total_accuracy:.2f}')
+        generated_image, test_accuracy = test_cgan(data_loader=test_loader,
+                                                   generator=generator,
+                                                   num_classes=num_classes,
+                                                   epoch=0,
+                                                   evaluator=evaluator,
+                                                   args=args,
+                                                   training_device=training_device)
+        test_accuracy /= len(test_loader)
+        save_image(make_grid(generated_image, nrow=8), f'figure/task_1/{args.model}_{test_accuracy:.2f}.png')
 
         # New Test
-        generated_image, total_accuracy = test_cgan(data_loader=new_test_loader,
-                                                    generator=generator,
-                                                    num_classes=num_classes,
-                                                    epoch=0,
-                                                    evaluator=evaluator,
-                                                    args=args,
-                                                    training_device=training_device)
-        total_accuracy /= len(new_test_loader)
-        save_image(make_grid(generated_image, nrow=8), f'figure/task_1/{args.model}_new_{total_accuracy:.2f}.png')
-        print(f'New Average accuracy: {total_accuracy:.2f}')
+        generated_image, new_test_accuracy = test_cgan(data_loader=new_test_loader,
+                                                       generator=generator,
+                                                       num_classes=num_classes,
+                                                       epoch=0,
+                                                       evaluator=evaluator,
+                                                       args=args,
+                                                       training_device=training_device)
+        new_test_accuracy /= len(new_test_loader)
+        save_image(make_grid(generated_image, nrow=8), f'figure/task_1/{args.model}_new_{new_test_accuracy:.2f}.png')
+
+        print(f'Average accuracy: {test_accuracy:.2f}')
+        print(f'New Average accuracy: {new_test_accuracy:.2f}')
 
 
 def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
@@ -247,7 +249,6 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
                                                        args=args,
                                                        training_device=training_device)
             accuracies[epoch] = total_accuracy / len(test_loader)
-            print(f'[{epoch + 1}/{args.epochs}]   Average accuracy: {accuracies[epoch]:.2f}')
 
             # New Test
             new_generated_image, total_accuracy = test_cnf(data_loader=new_test_loader,
@@ -257,6 +258,8 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
                                                            args=args,
                                                            training_device=training_device)
             new_accuracies[epoch] = total_accuracy / len(new_test_loader)
+
+            print(f'[{epoch + 1}/{args.epochs}]   Average accuracy: {accuracies[epoch]:.2f}')
             print(f'[{epoch + 1}/{args.epochs}]   New Average accuracy: {new_accuracies[epoch]:.2f}')
 
             # Save normalizing flow, and plot test image
@@ -285,26 +288,27 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
     else:
         # Start inferring
         info_log('Start inferring', args.verbosity)
-        generated_image, total_accuracy = test_cnf(data_loader=test_loader,
-                                                   normalizing_flow=normalizing_flow,
-                                                   epoch=0,
-                                                   evaluator=evaluator,
-                                                   args=args,
-                                                   training_device=training_device)
-        total_accuracy /= len(test_loader)
-        save_image(make_grid(generated_image, nrow=8), f'figure/task_1/{args.model}_{total_accuracy:.2f}.png')
-        print(f'Average accuracy: {total_accuracy:.2f}')
+        generated_image, test_accuracy = test_cnf(data_loader=test_loader,
+                                                  normalizing_flow=normalizing_flow,
+                                                  epoch=0,
+                                                  evaluator=evaluator,
+                                                  args=args,
+                                                  training_device=training_device)
+        test_accuracy /= len(test_loader)
+        save_image(make_grid(generated_image, nrow=8), f'figure/task_1/{args.model}_{test_accuracy:.2f}.png')
 
         # New test
-        generated_image, total_accuracy = test_cnf(data_loader=new_test_loader,
-                                                   normalizing_flow=normalizing_flow,
-                                                   epoch=0,
-                                                   evaluator=evaluator,
-                                                   args=args,
-                                                   training_device=training_device)
-        total_accuracy /= len(new_test_loader)
-        save_image(make_grid(generated_image, nrow=8), f'figure/task_1/{args.model}_new_{total_accuracy:.2f}.png')
-        print(f'New Average accuracy: {total_accuracy:.2f}')
+        generated_image, new_test_accuracy = test_cnf(data_loader=new_test_loader,
+                                                      normalizing_flow=normalizing_flow,
+                                                      epoch=0,
+                                                      evaluator=evaluator,
+                                                      args=args,
+                                                      training_device=training_device)
+        new_test_accuracy /= len(new_test_loader)
+        save_image(make_grid(generated_image, nrow=8), f'figure/task_1/{args.model}_new_{new_test_accuracy:.2f}.png')
+
+        print(f'Average accuracy: {test_accuracy:.2f}')
+        print(f'New Average accuracy: {new_test_accuracy:.2f}')
 
 
 def train_and_inference_celeb(train_dataset: CelebALoader,
