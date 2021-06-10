@@ -24,6 +24,7 @@ import torch
 def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
                             train_loader: DataLoader,
                             test_loader: DataLoader,
+                            new_test_loader: DataLoader,
                             evaluator: EvaluationModel,
                             num_classes: int,
                             args: Namespace,
@@ -33,6 +34,7 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
     :param train_dataset: Training dataset
     :param train_loader: Training data loader
     :param test_loader: Testing data loader
+    :param new_test_loader: Net Testing data loader
     :param evaluator: Evaluator
     :param num_classes: Number of classes (object IDs)
     :param args: All arguments
@@ -79,11 +81,12 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
     generator_losses = [0.0 for _ in range(args.epochs)]
     discriminator_losses = [0.0 for _ in range(args.epochs)]
     accuracies = [0.0 for _ in range(args.epochs)]
+    new_accuracies = [0.0 for _ in range(args.epochs)]
 
     if not args.inference:
         # Start training
         info_log('Start training', args.verbosity)
-        max_acc = 0.0
+        max_acc, max_new_acc = 0.0, 0.0
         for epoch in range(args.epochs):
             # Train
             total_g_loss, total_d_loss = train_cgan(data_loader=train_loader,
@@ -113,22 +116,44 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
             accuracies[epoch] = total_accuracy / len(test_loader)
             print(f'[{epoch + 1}/{args.epochs}]   Average accuracy: {accuracies[epoch]:.2f}')
 
+            # New Test
+            new_generated_image, total_accuracy = test_cgan(data_loader=new_test_loader,
+                                                            generator=generator,
+                                                            num_classes=num_classes,
+                                                            epoch=epoch,
+                                                            evaluator=evaluator,
+                                                            args=args,
+                                                            training_device=training_device)
+            new_accuracies[epoch] = total_accuracy / len(new_test_loader)
+            print(f'[{epoch + 1}/{args.epochs}]   New Average accuracy: {new_accuracies[epoch]:.2f}')
+
             # Save generator and discriminator, and plot test image
-            if accuracies[epoch] > max_acc:
-                max_acc = accuracies[epoch]
+            if accuracies[epoch] > max_acc or new_accuracies[epoch] > max_new_acc:
+                # Update
+                if accuracies[epoch] > max_acc:
+                    max_acc = accuracies[epoch]
+                if new_accuracies[epoch] > max_new_acc:
+                    max_new_acc = new_accuracies[epoch]
+
+                # Save images
                 save_image(make_grid(generated_image, nrow=8),
                            f'test_figure/{args.model}_{epoch}_{accuracies[epoch]:.2f}.jpg')
+                save_image(make_grid(generated_image, nrow=8),
+                           f'test_figure/{args.model}_{epoch}_new_{new_accuracies[epoch]:.2f}.jpg')
+
+                # Save model
                 checkpoint = {
                     'generator': generator.state_dict(),
                     'discriminator': discriminator.state_dict()
                 }
-                torch.save(checkpoint, f'model/task_1/{args.model}_{epoch}_{accuracies[epoch]:.4f}.pt')
+                torch.save(checkpoint,
+                           f'model/task_1/{args.model}_{epoch}_{accuracies[epoch]:.4f}_new_{new_accuracies[epoch]:.4f}.pt')
 
         # Plot losses and accuracies
         info_log('Plot losses and accuracies ...', args.verbosity)
         plot_losses(losses=(generator_losses, discriminator_losses), labels=['Generator', 'Discriminator'],
                     task='task_1', model=args.model)
-        plot_accuracies(accuracies=accuracies, model=args.model)
+        plot_accuracies(accuracies=(accuracies, new_accuracies), labels=['Test', 'New Test'], model=args.model)
     else:
         # Start inferring
         info_log('Start inferring', args.verbosity)
@@ -143,10 +168,23 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
         save_image(make_grid(generated_image, nrow=8), f'figure/task_1/{args.model}_{total_accuracy:.2f}.png')
         print(f'Average accuracy: {total_accuracy:.2f}')
 
+        # New Test
+        generated_image, total_accuracy = test_cgan(data_loader=new_test_loader,
+                                                    generator=generator,
+                                                    num_classes=num_classes,
+                                                    epoch=0,
+                                                    evaluator=evaluator,
+                                                    args=args,
+                                                    training_device=training_device)
+        total_accuracy /= len(new_test_loader)
+        save_image(make_grid(generated_image, nrow=8), f'figure/task_1/{args.model}_new_{total_accuracy:.2f}.png')
+        print(f'New Average accuracy: {total_accuracy:.2f}')
+
 
 def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
                            train_loader: DataLoader,
                            test_loader: DataLoader,
+                           new_test_loader: DataLoader,
                            evaluator: EvaluationModel,
                            num_classes: int,
                            args: Namespace,
@@ -156,6 +194,7 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
     :param train_dataset: Training dataset
     :param train_loader: Training data loader
     :param test_loader: Testing data loader
+    :param new_test_loader: New testing data loader
     :param evaluator: Evaluator
     :param num_classes: Number of different conditions
     :param args: All arguments
@@ -181,11 +220,12 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
     # Setup average losses/accuracies container
     losses = [0.0 for _ in range(args.epochs)]
     accuracies = [0.0 for _ in range(args.epochs)]
+    new_accuracies = [0.0 for _ in range(args.epochs)]
 
     if not args.inference:
         # Start training
         info_log('Start training', args.verbosity)
-        max_acc = 0.0
+        max_acc, max_new_acc = 0.0, 0.0
         for epoch in range(args.epochs):
             # Train
             total_loss = train_cnf(data_loader=train_loader,
@@ -209,18 +249,39 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
             accuracies[epoch] = total_accuracy / len(test_loader)
             print(f'[{epoch + 1}/{args.epochs}]   Average accuracy: {accuracies[epoch]:.2f}')
 
+            # New Test
+            new_generated_image, total_accuracy = test_cnf(data_loader=new_test_loader,
+                                                           normalizing_flow=normalizing_flow,
+                                                           epoch=epoch,
+                                                           evaluator=evaluator,
+                                                           args=args,
+                                                           training_device=training_device)
+            new_accuracies[epoch] = total_accuracy / len(new_test_loader)
+            print(f'[{epoch + 1}/{args.epochs}]   New Average accuracy: {new_accuracies[epoch]:.2f}')
+
             # Save normalizing flow, and plot test image
-            if accuracies[epoch] > max_acc:
-                max_acc = accuracies[epoch]
+            if accuracies[epoch] > max_acc or new_accuracies[epoch] > max_new_acc:
+                # Update
+                if accuracies[epoch] > max_acc:
+                    max_acc = accuracies[epoch]
+                if new_accuracies[epoch] > max_new_acc:
+                    max_new_acc = new_accuracies[epoch]
+
+                # Save images
                 save_image(make_grid(generated_image, nrow=8),
                            f'test_figure/{args.model}_{epoch}_{accuracies[epoch]:.2f}.jpg')
+                save_image(make_grid(new_generated_image, nrow=8),
+                           f'test_figure/{args.model}_{epoch}_new_{new_accuracies[epoch]:.2f}.jpg')
+
+                # Save model
                 checkpoint = {'normalizing_flow': normalizing_flow.state_dict()}
-                torch.save(checkpoint, f'model/task_1/{args.model}_{epoch}_{accuracies[epoch]:.4f}.pt')
+                torch.save(checkpoint,
+                           f'model/task_1/{args.model}_{epoch}_{accuracies[epoch]:.4f}_new_{new_accuracies[epoch]:.4f}.pt')
 
         # Plot losses and accuracies
         info_log('Plot losses and accuracies ...', args.verbosity)
         plot_losses(losses=(losses,), labels=['loss'], task='task_1', model=args.model)
-        plot_accuracies(accuracies=accuracies, model=args.model)
+        plot_accuracies(accuracies=(accuracies, new_accuracies), labels=['Test', 'New Test'], model=args.model)
     else:
         # Start inferring
         info_log('Start inferring', args.verbosity)
@@ -233,6 +294,17 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
         total_accuracy /= len(test_loader)
         save_image(make_grid(generated_image, nrow=8), f'figure/task_1/{args.model}_{total_accuracy:.2f}.png')
         print(f'Average accuracy: {total_accuracy:.2f}')
+
+        # New test
+        generated_image, total_accuracy = test_cnf(data_loader=new_test_loader,
+                                                   normalizing_flow=normalizing_flow,
+                                                   epoch=0,
+                                                   evaluator=evaluator,
+                                                   args=args,
+                                                   training_device=training_device)
+        total_accuracy /= len(new_test_loader)
+        save_image(make_grid(generated_image, nrow=8), f'figure/task_1/{args.model}_new_{total_accuracy:.2f}.png')
+        print(f'New Average accuracy: {total_accuracy:.2f}')
 
 
 def train_and_inference_celeb(train_dataset: CelebALoader,
@@ -361,8 +433,10 @@ def main() -> None:
     if args.task == 1:
         train_dataset = ICLEVRLoader(root_folder='data/task_1/', trans=transformation, mode='train')
         test_dataset = ICLEVRLoader(root_folder='data/task_1/', mode='test')
+        new_test_dataset = ICLEVRLoader(root_folder='data/task_1/', mode='new_test')
         train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-        test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+        test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
+        new_test_loader = DataLoader(new_test_dataset, batch_size=args.batch_size, shuffle=False)
         num_classes = train_dataset.num_classes
     else:
         train_dataset = CelebALoader(root_folder='data/task_2/', trans=transformation)
@@ -380,6 +454,7 @@ def main() -> None:
             train_and_evaluate_cnf(train_dataset=train_dataset,
                                    train_loader=train_loader,
                                    test_loader=test_loader,
+                                   new_test_loader=new_test_loader,
                                    evaluator=evaluator,
                                    num_classes=num_classes,
                                    args=args,
@@ -388,6 +463,7 @@ def main() -> None:
             train_and_evaluate_cgan(train_dataset=train_dataset,
                                     train_loader=train_loader,
                                     test_loader=test_loader,
+                                    new_test_loader=new_test_loader,
                                     evaluator=evaluator,
                                     num_classes=num_classes,
                                     args=args,

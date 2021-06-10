@@ -27,7 +27,7 @@ def change_labels_to_one_hot(obj: Dict[str, int], ori_label: List[List[str]]):
 
 def get_iclevr_data(root_folder: str, mode: str):
     """
-    Read training/testing data from the file in root_folder
+    Read training/testing/new_testing data from the file in root_folder
     :param root_folder: root folder containing training/testing data
     :param mode: train or test
     :return: image & labels for train, otherwise none & labels
@@ -40,7 +40,7 @@ def get_iclevr_data(root_folder: str, mode: str):
         label = change_labels_to_one_hot(obj=obj, ori_label=label)
         return np.squeeze(img), np.squeeze(label)
     else:
-        testing_data = json.load(open(os.path.join(root_folder, 'test.json')))
+        testing_data = json.load(open(os.path.join(root_folder, f'{mode}.json')))
         obj = json.load(open(os.path.join(root_folder, 'objects.json')))
         label = testing_data
         label = change_labels_to_one_hot(obj=obj, ori_label=label)

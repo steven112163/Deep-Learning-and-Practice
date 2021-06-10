@@ -6,15 +6,15 @@ def plot_losses(losses: Tuple[List[float], ...], labels: List[str], task: str, m
     """
     Plot losses
     :param losses: losses
-    :param labels: labels of each loss list
+    :param labels: label of each loss list
     :param task: task_1 or task_2
     :param model: which model is used
     :return: None
     """
     plt.clf()
     plt.title('Loss')
-    plt.xlabel('epoch')
-    plt.ylabel('loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
     for idx, loss in enumerate(losses):
         plt.plot(range(len(loss)), loss, label=f'{labels[idx]}')
     plt.legend()
@@ -22,18 +22,20 @@ def plot_losses(losses: Tuple[List[float], ...], labels: List[str], task: str, m
     plt.savefig(f'./figure/{task}/{model}_loss.png')
 
 
-def plot_accuracies(accuracies: List[float], model: str) -> None:
+def plot_accuracies(accuracies: Tuple[List[float], ...], labels: List[str], model: str) -> None:
     """
     Plot accuracies
     :param accuracies: accuracies
+    :param labels: label of each accuracy list
     :param model: which model is used
     :return: None
     """
     plt.clf()
     plt.title('Accuracy')
-    plt.xlabel('epoch')
-    plt.ylabel('accuracy')
-    plt.plot(range(len(accuracies)), accuracies, label='accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    for idx, accuracy in enumerate(accuracies):
+        plt.plot(range(len(accuracy)), accuracy, label=labels[idx])
     plt.legend()
     plt.tight_layout()
     plt.savefig(f'./figure/task_1/{model}_accuracy.png')

@@ -191,8 +191,8 @@ def inference_celeb(train_dataset: CelebALoader,
         # Generate linear images
         for num_of_intervals in range(9):
             image, _, _ = normalizing_flow.forward(x=first_z + num_of_intervals * interval_z,
-                                             x_label=first_label + num_of_intervals * interval_label,
-                                             reverse=True)
+                                                   x_label=first_label + num_of_intervals * interval_label,
+                                                   reverse=True)
             linear_images = torch.cat([linear_images,
                                        image.cpu().detach().view(1, 3, args.image_size, args.image_size)], 0)
     save_image(make_grid(linear_images, nrow=9), f'figure/task_2/{args.model}_app_2.jpg')
@@ -222,8 +222,8 @@ def inference_celeb(train_dataset: CelebALoader,
     manipulated_images = torch.randn(0, 3, args.image_size, args.image_size)
     for num_of_intervals in range(5):
         image, _, _ = normalizing_flow.forward(x=neg_z + num_of_intervals * interval_z,
-                                         x_label=neg_label + num_of_intervals * interval_label,
-                                         reverse=True)
+                                               x_label=neg_label + num_of_intervals * interval_label,
+                                               reverse=True)
         manipulated_images = torch.cat([manipulated_images,
                                         image.cpu().detach().view(1, 3, args.image_size, args.image_size)], 0)
     save_image(make_grid(manipulated_images, nrow=5), f'figure/task_2/{args.model}_app_3.jpg')
