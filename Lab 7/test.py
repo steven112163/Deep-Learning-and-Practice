@@ -108,7 +108,7 @@ def test_cnf(data_loader: DataLoader,
         labels = batch_data
         labels = labels.to(training_device).type(torch.float)
 
-        fake_images = normalizing_flow.forward(x=None, x_label=labels, reverse=True)
+        fake_images, _, _ = normalizing_flow.forward(x=None, x_label=labels, reverse=True)
 
         transformed_images = torch.randn(0, 3, args.image_size, args.image_size)
         transformation = transforms.Compose([transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
@@ -156,7 +156,7 @@ def inference_celeb(train_dataset: CelebALoader,
     labels = labels.to(training_device).type(torch.float)
 
     # Produce fake images
-    fake_images = normalizing_flow.forward(x=None, x_label=labels, reverse=True)
+    fake_images, _, _ = normalizing_flow.forward(x=None, x_label=labels, reverse=True)
 
     # Save fake images for application 1
     generated_images = torch.randn(0, 3, args.image_size, args.image_size)
@@ -185,17 +185,17 @@ def inference_celeb(train_dataset: CelebALoader,
         second_z, _, _ = normalizing_flow.forward(x=second_image, x_label=second_label)
 
         # Compute interval
-        interval_z = (second_z - first_z) / 4.0
-        interval_label = (second_label - first_label) / 4.0
+        interval_z = (second_z - first_z) / 8.0
+        interval_label = (second_label - first_label) / 8.0
 
         # Generate linear images
-        for num_of_intervals in range(5):
-            image = normalizing_flow.forward(x=first_z + num_of_intervals * interval_z,
+        for num_of_intervals in range(9):
+            image, _, _ = normalizing_flow.forward(x=first_z + num_of_intervals * interval_z,
                                              x_label=first_label + num_of_intervals * interval_label,
                                              reverse=True)
             linear_images = torch.cat([linear_images,
                                        image.cpu().detach().view(1, 3, args.image_size, args.image_size)], 0)
-    save_image(make_grid(linear_images, nrow=5), f'figure/task_2/{args.model}_app_2.jpg')
+    save_image(make_grid(linear_images, nrow=9), f'figure/task_2/{args.model}_app_2.jpg')
 
     # Application 3
     # Get a image and labels with negative/positive smiling
@@ -221,7 +221,7 @@ def inference_celeb(train_dataset: CelebALoader,
     # Generate manipulated images
     manipulated_images = torch.randn(0, 3, args.image_size, args.image_size)
     for num_of_intervals in range(5):
-        image = normalizing_flow.forward(x=neg_z + num_of_intervals * interval_z,
+        image, _, _ = normalizing_flow.forward(x=neg_z + num_of_intervals * interval_z,
                                          x_label=neg_label + num_of_intervals * interval_label,
                                          reverse=True)
         manipulated_images = torch.cat([manipulated_images,
