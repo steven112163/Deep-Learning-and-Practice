@@ -45,7 +45,7 @@ def train_cgan(data_loader: DataLoader,
 
     if args.model == 'DCGAN':
         # DCGAN
-        criterion = nn.BCELoss().to(training_device)
+        criterion = nn.ReLU().to(training_device)
     elif args.model == 'SAGAN':
         # SAGAN
         criterion = nn.ReLU().to(training_device)
@@ -77,8 +77,8 @@ def train_cgan(data_loader: DataLoader,
         # Calculate loss on all-real batch
         optimizer_d.zero_grad()
         if args.model == 'DCGAN':
-            # DCGAN
-            loss_d_real = criterion(outputs, labels)
+            # DCGAN with WGAN-hinge
+            loss_d_real = criterion(1.0 - outputs).mean()
         elif args.model == 'SAGAN':
             # SAGAN with WGAN-hinge
             loss_d_real = criterion(1.0 - outputs).mean()
@@ -116,8 +116,8 @@ def train_cgan(data_loader: DataLoader,
 
         # Calculate loss on fake batch
         if args.model == 'DCGAN':
-            # DCGAN
-            loss_d_fake = criterion(outputs, labels)
+            # DCGAN with WGAN-hinge
+            loss_d_fake = criterion(1.0 + outputs).mean()
         elif args.model == 'SAGAN':
             # SAGAN with WGAN-hinge
             loss_d_fake = criterion(1.0 + outputs).mean()
@@ -141,8 +141,8 @@ def train_cgan(data_loader: DataLoader,
 
         # Calculate generator's loss based on this output
         if args.model == 'DCGAN':
-            # DCGAN
-            loss_g = criterion(outputs, labels)
+            # DCGAN with WGAN-hinge
+            loss_g = -outputs.mean()
         elif args.model == 'SAGAN':
             # SAGAN with WGAN-hinge
             loss_g = -outputs.mean()

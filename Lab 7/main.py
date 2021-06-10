@@ -21,8 +21,7 @@ import os
 import torch
 
 
-def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
-                            train_loader: DataLoader,
+def train_and_evaluate_cgan(train_loader: DataLoader,
                             test_loader: DataLoader,
                             new_test_loader: DataLoader,
                             evaluator: EvaluationModel,
@@ -31,7 +30,6 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
                             training_device: device) -> None:
     """
     Train and test cGAN
-    :param train_dataset: Training dataset
     :param train_loader: Training data loader
     :param test_loader: Testing data loader
     :param new_test_loader: Net Testing data loader
@@ -100,8 +98,8 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
                                                     epoch=epoch,
                                                     args=args,
                                                     training_device=training_device)
-            generator_losses[epoch] = total_g_loss / len(train_dataset)
-            discriminator_losses[epoch] = total_d_loss / len(train_dataset)
+            generator_losses[epoch] = total_g_loss / len(train_loader)
+            discriminator_losses[epoch] = total_d_loss / len(train_loader)
             print(f'[{epoch + 1}/{args.epochs}]   Average generator loss: {generator_losses[epoch]}')
             print(f'[{epoch + 1}/{args.epochs}]   Average discriminator loss: {discriminator_losses[epoch]}')
 
@@ -183,8 +181,7 @@ def train_and_evaluate_cgan(train_dataset: ICLEVRLoader,
         print(f'New Average accuracy: {new_test_accuracy:.2f}')
 
 
-def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
-                           train_loader: DataLoader,
+def train_and_evaluate_cnf(train_loader: DataLoader,
                            test_loader: DataLoader,
                            new_test_loader: DataLoader,
                            evaluator: EvaluationModel,
@@ -193,7 +190,6 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
                            training_device: device) -> None:
     """
     Train and test cNF
-    :param train_dataset: Training dataset
     :param train_loader: Training data loader
     :param test_loader: Testing data loader
     :param new_test_loader: New testing data loader
@@ -238,7 +234,7 @@ def train_and_evaluate_cnf(train_dataset: ICLEVRLoader,
                                    epoch=epoch,
                                    args=args,
                                    training_device=training_device)
-            losses[epoch] = total_loss / len(train_dataset)
+            losses[epoch] = total_loss / len(train_loader)
             print(f'[{epoch + 1}/{args.epochs}]   Average loss: {losses[epoch]}')
 
             # Test
@@ -358,7 +354,7 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
                                    epoch=epoch,
                                    args=args,
                                    training_device=training_device)
-            losses[epoch] = total_loss / len(train_dataset)
+            losses[epoch] = total_loss / len(train_loader)
             print(f'[{epoch + 1}/{args.epochs}]   Average loss: {losses[epoch]}')
 
             # 3 applications
@@ -438,9 +434,11 @@ def main() -> None:
         train_dataset = ICLEVRLoader(root_folder='data/task_1/', trans=transformation, mode='train')
         test_dataset = ICLEVRLoader(root_folder='data/task_1/', mode='test')
         new_test_dataset = ICLEVRLoader(root_folder='data/task_1/', mode='new_test')
+
         train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
         test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False)
         new_test_loader = DataLoader(new_test_dataset, batch_size=args.batch_size, shuffle=False)
+
         num_classes = train_dataset.num_classes
     else:
         train_dataset = CelebALoader(root_folder='data/task_2/', trans=transformation)
@@ -455,8 +453,7 @@ def main() -> None:
 
     if args.task == 1:
         if args.model == 'GLOW':
-            train_and_evaluate_cnf(train_dataset=train_dataset,
-                                   train_loader=train_loader,
+            train_and_evaluate_cnf(train_loader=train_loader,
                                    test_loader=test_loader,
                                    new_test_loader=new_test_loader,
                                    evaluator=evaluator,
@@ -464,8 +461,7 @@ def main() -> None:
                                    args=args,
                                    training_device=training_device)
         else:
-            train_and_evaluate_cgan(train_dataset=train_dataset,
-                                    train_loader=train_loader,
+            train_and_evaluate_cgan(train_loader=train_loader,
                                     test_loader=test_loader,
                                     new_test_loader=new_test_loader,
                                     evaluator=evaluator,
