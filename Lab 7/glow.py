@@ -474,6 +474,9 @@ class CGlow(nn.Module):
     def __init__(self, num_channels: int, num_levels: int, num_steps: int, num_classes: int, image_size: int):
         super(CGlow, self).__init__()
 
+        # Use bounds to rescale images before converting to logits, not learned
+        self.register_buffer('bounds', torch.tensor([0.95], dtype=torch.float32))
+
         self.squeeze = Squeeze2d()
         self.flows = _CGlow(in_channels=3 * 4,
                             cond_channels=1 * 4,
@@ -597,15 +600,20 @@ class CGlow(nn.Module):
         h += self.project_label(label).view(h.shape[0], channels, 1, 1)
         return h[:, : channels // 2, ...], h[:, channels // 2:, ...]
 
-    @staticmethod
-    def _pre_process(x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
+    def _pre_process(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
         """
         Preprocess x to x + U(0, 1/256)
         :param x: Batched data
         :return: Preprocessed data and sum of log-determinant
         """
-        x += torch.zeros_like(x).uniform_(1.0 / 256)
-        sld = float(-np.log(256.) * x.size(1) * x.size(2) * x.size(3)) * torch.ones(x.size(0), device=x.device)
+        x = (x * 255. + torch.rand_like(x)) / 256.
+        x = (2 * x - 1) * self.bounds
+        x = (x + 1) / 2
+        x = x.log() - (1. - x).log()
+
+        # Save log-determinant of Jacobian of initial transform
+        ld = func.softplus(x) + func.softplus(-x) - func.softplus((1. - self.bounds).log() - self.bounds.log())
+        sld = ld.flatten(1).sum(-1)
 
         return x, sld
 
@@ -757,4 +765,4 @@ class NLLLoss(nn.Module):
         :param labels: Labels
         :return: Loss
         """
-        return func.binary_cross_entropy_with_logits(input=label_logits, target=labels.float()) * 0.05 + torch.mean(nll)
+        return func.binary_cross_entropy_with_logits(input=label_logits, target=labels.float()) * 0.01 + torch.mean(nll)
