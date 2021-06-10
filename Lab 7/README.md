@@ -19,7 +19,7 @@
 |`'-lrnf', '--learning_rate_normalizing_flow'`|Learning rate of normalizing flow|0.0005|
 |`'-e', '--epochs'`|Number of epochs|300|
 |`'-wu', '--warmup'`|Number of warmup epochs|10|
-|`'-t', '--task'`|Task 1 or task 2|1|
+|`'-t', '--task'`|Task 1 or task 2|1 (1-2)|
 |`'-m', '--model'`|cGAN or cNF|'dcgan'|
-|`'-inf', '--inference'`|Only infer or not|0|
-|`'-v', '--verbosity'`|Verbosity level|0|
+|`'-inf', '--inference'`|Only infer or not|False|
+|`'-v', '--verbosity'`|Verbosity level|0 (0-2)|

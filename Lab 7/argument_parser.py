@@ -1,18 +1,6 @@
 from argparse import ArgumentParser, ArgumentTypeError, Namespace
 
 
-def check_task_type(input_value: str) -> int:
-    """
-    Check whether task is true or false
-    :param input_value: input string value
-    :return: integer value
-    """
-    int_value = int(input_value)
-    if int_value != 1 and int_value != 2:
-        raise ArgumentTypeError(f'Task should be 1 or 2.')
-    return int_value
-
-
 def check_model_type(input_value: str) -> str:
     """
     Check whether model is gan or nf
@@ -22,29 +10,6 @@ def check_model_type(input_value: str) -> str:
     if input_value != 'dcgan' and input_value != 'sagan' and input_value != 'srgan' and input_value != 'glow':
         raise ArgumentTypeError(f'Model should be "dcgan", "sagan", "srgan" or "glow"')
     return input_value.upper()
-
-def check_inference_type(input_value: str) -> int:
-    """
-    Check whether inference is true or false
-    :param input_value: input string value
-    :return: integer value
-    """
-    int_value = int(input_value)
-    if int_value != 0 and int_value != 1:
-        raise ArgumentTypeError(f'Inference should be 0 or 1.')
-    return int_value
-
-
-def check_verbosity_type(input_value: str) -> int:
-    """
-    Check whether verbosity is true or false
-    :param input_value: input string value
-    :return: integer value
-    """
-    int_value = int(input_value)
-    if int_value != 0 and int_value != 1 and int_value != 2:
-        raise ArgumentTypeError(f'Verbosity should be 0, 1 or 2.')
-    return int_value
 
 
 def parse_arguments() -> Namespace:
@@ -69,9 +34,9 @@ def parse_arguments() -> Namespace:
                         help='Learning rate of normalizing flow')
     parser.add_argument('-e', '--epochs', default=300, type=int, help='Number of epochs')
     parser.add_argument('-wu', '--warmup', default=10, type=int, help='Number of warmup epochs')
-    parser.add_argument('-t', '--task', default=1, type=check_task_type, help='Task 1 or task 2')
+    parser.add_argument('-t', '--task', default=1, type=int, choices=[1, 2], help='Task 1 or task 2')
     parser.add_argument('-m', '--model', default='dcgan', type=check_model_type, help='cGAN or cNF')
-    parser.add_argument('-inf', '--inference', default=0, type=check_inference_type, help='Only infer or not')
-    parser.add_argument('-v', '--verbosity', default=0, type=check_verbosity_type, help='Verbosity level')
+    parser.add_argument('-inf', '--inference', action='store_true', help='Only infer or not')
+    parser.add_argument('-v', '--verbosity', default=0, type=int, choices=[0, 1, 2], help='Verbosity level')
 
     return parser.parse_args()
