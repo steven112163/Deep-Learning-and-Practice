@@ -9,7 +9,7 @@ from test import test_cgan, test_cnf, inference_celeb
 from evaluator import EvaluationModel
 from argument_parser import parse_arguments
 from visualizer import plot_losses, plot_accuracies
-from util import info_log, create_directories
+from util import info_log, create_directories, get_score
 from torch.utils.data import DataLoader
 from torchvision.transforms import transforms
 from torchvision.utils import save_image, make_grid
@@ -84,7 +84,7 @@ def train_and_evaluate_cgan(train_loader: DataLoader,
     if not args.inference:
         # Start training
         info_log('Start training', args.verbosity)
-        max_acc, max_new_acc = 0.0, 0.0
+        max_score = 0.0
         for epoch in range(args.epochs):
             # Train
             total_g_loss, total_d_loss = train_cgan(data_loader=train_loader,
@@ -127,12 +127,10 @@ def train_and_evaluate_cgan(train_loader: DataLoader,
             print(f'[{epoch + 1}/{args.epochs}]   New Average accuracy: {new_accuracies[epoch]:.2f}')
 
             # Save generator and discriminator, and plot test image
-            if accuracies[epoch] > max_acc or new_accuracies[epoch] > max_new_acc:
+            score = get_score(accuracies[epoch], new_accuracies[epoch])
+            if score >= max_score:
                 # Update
-                if accuracies[epoch] > max_acc:
-                    max_acc = accuracies[epoch]
-                if new_accuracies[epoch] > max_new_acc:
-                    max_new_acc = new_accuracies[epoch]
+                max_score = score
 
                 # Save images
                 save_image(make_grid(generated_image, nrow=8),
@@ -223,7 +221,7 @@ def train_and_evaluate_cnf(train_loader: DataLoader,
     if not args.inference:
         # Start training
         info_log('Start training', args.verbosity)
-        max_acc, max_new_acc = 0.0, 0.0
+        max_score = 0.0
         for epoch in range(args.epochs):
             # Train
             total_loss = train_cnf(data_loader=train_loader,
@@ -259,12 +257,10 @@ def train_and_evaluate_cnf(train_loader: DataLoader,
             print(f'[{epoch + 1}/{args.epochs}]   New Average accuracy: {new_accuracies[epoch]:.2f}')
 
             # Save normalizing flow, and plot test image
-            if accuracies[epoch] > max_acc or new_accuracies[epoch] > max_new_acc:
+            score = get_score(accuracies[epoch], new_accuracies[epoch])
+            if score >= max_score:
                 # Update
-                if accuracies[epoch] > max_acc:
-                    max_acc = accuracies[epoch]
-                if new_accuracies[epoch] > max_new_acc:
-                    max_new_acc = new_accuracies[epoch]
+                max_score = score
 
                 # Save images
                 save_image(make_grid(generated_image, nrow=8),
