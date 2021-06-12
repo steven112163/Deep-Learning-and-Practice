@@ -146,11 +146,12 @@ def train_and_evaluate_cgan(train_loader: DataLoader,
                 torch.save(checkpoint,
                            f'model/task_1/{args.model}_{epoch}_{accuracies[epoch]:.4f}_new_{new_accuracies[epoch]:.4f}.pt')
 
-        # Plot losses and accuracies
-        info_log('Plot losses and accuracies ...', args.verbosity)
-        plot_losses(losses=(generator_losses, discriminator_losses), labels=['Generator', 'Discriminator'],
-                    task='task_1', model=args.model)
-        plot_accuracies(accuracies=(accuracies, new_accuracies), labels=['Test', 'New Test'], model=args.model)
+            # Plot losses and accuracies
+            info_log('Plot losses and accuracies ...', args.verbosity)
+            plot_losses(losses=(generator_losses, discriminator_losses), labels=['Generator', 'Discriminator'],
+                        epoch=epoch, task='task_1', model=args.model)
+            plot_accuracies(accuracies=(accuracies, new_accuracies), labels=['Test', 'New Test'], epoch=epoch,
+                            model=args.model)
     else:
         # Start inferring
         info_log('Start inferring', args.verbosity)
@@ -273,10 +274,11 @@ def train_and_evaluate_cnf(train_loader: DataLoader,
                 torch.save(checkpoint,
                            f'model/task_1/{args.model}_{epoch}_{accuracies[epoch]:.4f}_new_{new_accuracies[epoch]:.4f}.pt')
 
-        # Plot losses and accuracies
-        info_log('Plot losses and accuracies ...', args.verbosity)
-        plot_losses(losses=(losses,), labels=['loss'], task='task_1', model=args.model)
-        plot_accuracies(accuracies=(accuracies, new_accuracies), labels=['Test', 'New Test'], model=args.model)
+            # Plot losses and accuracies
+            info_log('Plot losses and accuracies ...', args.verbosity)
+            plot_losses(losses=(losses,), labels=['loss'], epoch=epoch, task='task_1', model=args.model)
+            plot_accuracies(accuracies=(accuracies, new_accuracies), labels=['Test', 'New Test'], epoch=epoch,
+                            model=args.model)
     else:
         # Start inferring
         info_log('Start inferring', args.verbosity)
@@ -366,9 +368,9 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
                 checkpoint = {'normalizing_flow': normalizing_flow.state_dict()}
                 torch.save(checkpoint, f'model/task_2/{args.model}_{epoch}_{losses[epoch]:.4f}.pt')
 
-        # Plot losses
-        info_log('Plot losses ...', args.verbosity)
-        plot_losses(losses=(losses,), labels=['loss'], task='task_2', model=args.model)
+            # Plot losses
+            info_log('Plot losses ...', args.verbosity)
+            plot_losses(losses=(losses,), labels=['loss'], epoch=epoch, task='task_2', model=args.model)
     else:
         # Start inferring
         info_log('Start inferring', args.verbosity)
