@@ -43,15 +43,8 @@ def train_cgan(data_loader: DataLoader,
     total_g_loss = 0.0
     total_d_loss = 0.0
 
-    if args.model == 'DCGAN':
-        # DCGAN
-        criterion = nn.ReLU().to(training_device)
-    elif args.model == 'SAGAN':
-        # SAGAN
-        criterion = nn.ReLU().to(training_device)
-    else:
-        # SRGAN
-        criterion = GeneratorLoss().to(training_device)
+    # SRGAN
+    criterion = GeneratorLoss().to(training_device)
 
     for batch_idx, batch_data in enumerate(data_loader):
         images, real_labels = batch_data
@@ -74,18 +67,8 @@ def train_cgan(data_loader: DataLoader,
         # Forward pass real batch through discriminator
         outputs = discriminator.forward(images, real_labels)
 
-        # Calculate loss on all-real batch
-        optimizer_d.zero_grad()
-        if args.model == 'DCGAN':
-            # DCGAN with WGAN-hinge
-            loss_d_real = criterion(1.0 - outputs).mean()
-        elif args.model == 'SAGAN':
-            # SAGAN with WGAN-hinge
-            loss_d_real = criterion(1.0 - outputs).mean()
-        else:
-            # SRGAN
-            loss_d_real = (1.0 - outputs).mean()
-        loss_d_real.backward()
+        # Calculate loss on all-real batch with WGAN-GP
+        loss_d_real = - outputs.mean()
 
         # Train with all-fake batch
         # Generate batch of latent vectors
@@ -114,23 +97,34 @@ def train_cgan(data_loader: DataLoader,
         # Forward pass fake batch through discriminator
         outputs = discriminator.forward(fake_outputs.detach(), real_labels)
 
-        # Calculate loss on fake batch
-        if args.model == 'DCGAN':
-            # DCGAN with WGAN-hinge
-            loss_d_fake = criterion(1.0 + outputs).mean()
-        elif args.model == 'SAGAN':
-            # SAGAN with WGAN-hinge
-            loss_d_fake = criterion(1.0 + outputs).mean()
-        else:
-            # SRGAN
-            loss_d_fake = outputs.mean()
-        loss_d_fake.backward()
+        # Calculate loss on fake batch with WGAN-GP
+        loss_d_fake = outputs.mean()
+
+        # Compute gradient penalty
+        alpha = torch.rand_like(images)
+        interpolated = (alpha * images.data + (1 - alpha) * fake_outputs.data).clone()
+        interpolated = interpolated.to(training_device).detach().requires_grad_(True)
+        outputs = discriminator.forward(interpolated, real_labels)
+
+        grad = torch.autograd.grad(outputs=outputs,
+                                   inputs=interpolated,
+                                   grad_outputs=torch.ones_like(outputs),
+                                   retain_graph=True,
+                                   create_graph=True,
+                                   only_inputs=True)[0]
+
+        grad = grad.view(grad.size(0), -1)
+        grad_l2norm = torch.sqrt(torch.sum(grad ** 2, dim=1))
+        loss_d_gp = 10 * torch.mean((grad_l2norm - 1) ** 2)
+
+        # Compute loss of discriminator as sum over the fake and the real batches, and gradient penalty
+        loss_d = loss_d_real + loss_d_fake + loss_d_gp
+
+        total_d_loss += loss_d.item()
+        optimizer_d.zero_grad()
+        loss_d.backward()
         optimizer_d.step()
         scheduler_d.step()
-
-        # Compute loss of discriminator as sum over the fake and the real batches
-        loss_d = loss_d_real + loss_d_fake
-        total_d_loss += loss_d.item()
 
         ############################
         # (2) Update G network: maximize log(D(G(z)))
@@ -140,11 +134,8 @@ def train_cgan(data_loader: DataLoader,
         labels = torch.full((batch_size, 1), 1.0, dtype=torch.float, device=training_device)
 
         # Calculate generator's loss based on this output
-        if args.model == 'DCGAN':
-            # DCGAN with WGAN-hinge
-            loss_g = -outputs.mean()
-        elif args.model == 'SAGAN':
-            # SAGAN with WGAN-hinge
+        if args.model == 'DCGAN' or args.model == 'SAGAN':
+            # DCGAN/SAGAN with WGAN-GP
             loss_g = -outputs.mean()
         else:
             # SRGAN
