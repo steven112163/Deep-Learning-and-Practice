@@ -11,7 +11,9 @@ from torchvision.utils import save_image, make_grid
 from torch import device
 from typing import Tuple, Optional
 from argparse import Namespace
+import numpy as np
 import torch
+import os
 
 
 def test_cgan(data_loader: DataLoader,
@@ -147,8 +149,43 @@ def inference_celeb(train_dataset: CelebALoader,
     normalizing_flow.eval()
 
     # Application 1
-    # Get labels for inference
     debug_log(f'Perform app 1', args.verbosity)
+    application_one(train_dataset=train_dataset,
+                    normalizing_flow=normalizing_flow,
+                    num_classes=num_classes,
+                    args=args,
+                    training_device=training_device)
+
+    # Application 2
+    debug_log(f'Perform app 2', args.verbosity)
+    application_two(train_dataset=train_dataset,
+                    normalizing_flow=normalizing_flow,
+                    args=args,
+                    training_device=training_device)
+
+    # Application 3
+    debug_log(f'Perform app 3', args.verbosity)
+    application_three(train_dataset=train_dataset,
+                      normalizing_flow=normalizing_flow,
+                      args=args,
+                      training_device=training_device)
+
+
+def application_one(train_dataset: CelebALoader,
+                    normalizing_flow: CGlow,
+                    num_classes: int,
+                    args: Namespace,
+                    training_device: device) -> None:
+    """
+    Application 1
+    :param train_dataset: Training dataset
+    :param normalizing_flow: Conditional normalizing flow model
+    :param num_classes: Number of classes (attributes)
+    :param args: All arguments
+    :param training_device: Training device
+    :return: None
+    """
+    # Get labels for inference
     labels = torch.rand(0, num_classes)
     for idx in range(32):
         _, label = train_dataset[idx]
@@ -165,9 +202,20 @@ def inference_celeb(train_dataset: CelebALoader,
         generated_images = torch.cat([generated_images, n_image.view(1, 3, args.image_size, args.image_size)], 0)
     save_image(make_grid(generated_images, nrow=8), f'figure/task_2/{args.model}_app_1.jpg')
 
-    # Application 2
+
+def application_two(train_dataset: CelebALoader,
+                    normalizing_flow: CGlow,
+                    args: Namespace,
+                    training_device: device) -> None:
+    """
+    Application 2
+    :param train_dataset: Training dataset
+    :param normalizing_flow: Conditional normalizing flow model
+    :param args: All arguments
+    :param training_device: Training device
+    :return: None
+    """
     # Get 2 images to perform linear interpolation
-    debug_log(f'Perform app 2', args.verbosity)
     linear_images = torch.randn(0, 3, args.image_size, args.image_size)
     for idx in range(5):
         # Get first image and label
@@ -197,33 +245,119 @@ def inference_celeb(train_dataset: CelebALoader,
                                        image.cpu().detach().view(1, 3, args.image_size, args.image_size)], 0)
     save_image(make_grid(linear_images, nrow=9), f'figure/task_2/{args.model}_app_2.jpg')
 
-    # Application 3
-    # Get a image and labels with negative/positive smiling
-    debug_log(f'Perform app 3', args.verbosity)
+
+def application_three(train_dataset: CelebALoader,
+                      normalizing_flow: CGlow,
+                      args: Namespace,
+                      training_device: device) -> None:
+    """
+    Application three
+    :param train_dataset: Training dataset
+    :param normalizing_flow: Conditional normalizing flow model
+    :param args: All arguments
+    :param training_device: Training device
+    :return: None
+    """
+    # Get a image and labels with negative/positive smiling/bald
     image, label = train_dataset[1]
     image = image.to(training_device).type(torch.float).view(1, 3, args.image_size, args.image_size)
     label = torch.from_numpy(label).to(training_device).type(torch.float).view(1, 40)
-    neg_label = torch.clone(label)
-    neg_label[0, 4] = -1.
-    neg_label[0, 31] = -1.
-    pos_label = torch.clone(label)
-    pos_label[0, 4] = 1.
-    pos_label[0, 31] = 1.
+    latent, _, _ = normalizing_flow.forward(x=image, x_label=label)
 
-    # Generate latent code
-    neg_z, _, _ = normalizing_flow.forward(x=image, x_label=neg_label)
-    pos_z, _, _ = normalizing_flow.forward(x=image, x_label=pos_label)
+    # Get negative labels
+    neg_smiling_label = torch.clone(label)
+    neg_bald_label = torch.clone(label)
+    neg_smiling_label[0, 31] = -1.
+    neg_bald_label[0, 4] = -1.
 
-    # Compute interval
-    interval_z = (pos_z - neg_z) / 4.0
-    interval_label = (pos_label - neg_label) / 4.0
+    # Get positive labels
+    pos_smiling_label = torch.clone(label)
+    pos_bald_label = torch.clone(label)
+    pos_smiling_label[0, 31] = 1.
+    pos_bald_label[0, 4] = 1.
+
+    # Compute conditional interval
+    interval_smiling_label = (pos_smiling_label - neg_smiling_label) / 4.0
+    interval_bald_label = (pos_bald_label - neg_bald_label) / 4.0
 
     # Generate manipulated images
     manipulated_images = torch.randn(0, 3, args.image_size, args.image_size)
-    for num_of_intervals in range(5):
-        image, _, _ = normalizing_flow.forward(x=neg_z + num_of_intervals * interval_z,
+
+    # Generate smiling
+    generate_manipulated_images(train_dataset=train_dataset,
+                                normalizing_flow=normalizing_flow,
+                                latent=latent,
+                                neg_label=neg_smiling_label,
+                                interval_label=interval_smiling_label,
+                                manipulated_images=manipulated_images,
+                                idx=31,
+                                args=args,
+                                training_device=training_device)
+
+    # Generate bald
+    generate_manipulated_images(train_dataset=train_dataset,
+                                normalizing_flow=normalizing_flow,
+                                latent=latent,
+                                neg_label=neg_bald_label,
+                                interval_label=interval_bald_label,
+                                manipulated_images=manipulated_images,
+                                idx=4,
+                                args=args,
+                                training_device=training_device)
+
+    save_image(make_grid(manipulated_images, nrow=5), f'figure/task_2/{args.model}_app_3.jpg')
+
+
+def generate_manipulated_images(train_dataset: CelebALoader,
+                                normalizing_flow: CGlow,
+                                latent: torch.Tensor,
+                                neg_label: torch.Tensor,
+                                interval_label: torch.Tensor,
+                                manipulated_images: torch.Tensor,
+                                idx: int,
+                                args: Namespace,
+                                training_device: device) -> None:
+    """
+    Generate images with manipulated attribute
+    :param train_dataset: Training dataset
+    :param normalizing_flow: Conditional normalizing flow model
+    :param latent: Latent code of the target image
+    :param neg_label: Label with negative target attribute
+    :param interval_label: Interval from negative label to positive label
+    :param manipulated_images: Tensor of manipulated images
+    :param idx: Index of the target attribute
+    :param args: All arguments
+    :param training_device: Training device
+    :return: None
+    """
+    if os.path.exists(f'model/task_2/interval_z_{idx}.npy'):
+        pos_z_mean = torch.zeros_like(latent, dtype=torch.float)
+        neg_z_mean = torch.zeros_like(latent, dtype=torch.float)
+        num_pos, num_neg = 0, 0
+        for image, label in train_dataset:
+            if label[idx] == 1 or label[idx] == -1:
+                image = image.to(training_device).type(torch.float).view(1, 3, args.image_size, args.image_size)
+                label = torch.from_numpy(label).to(training_device).type(torch.float).view(1, 40)
+
+                z, _, _ = normalizing_flow.forward(x=image, x_label=label)
+                z = z.cpu().detach()
+
+                if label[0, idx] == 1:
+                    num_pos += 1
+                    pos_z_mean = (num_pos - 1) * pos_z_mean / num_pos + z / num_pos
+                elif label[0, idx] == -1:
+                    num_neg += 1
+                    neg_z_mean = (num_neg - 1) * neg_z_mean / num_neg + z / num_neg
+        interval_z = 1.6 * (pos_z_mean - neg_z_mean)
+        interval_z = interval_z.numpy()
+        np.save(f'model/task_2/interval_z_{idx}.npy', interval_z)
+    interval_z = np.load(f'model/task_2/interval_z_{idx}.npy')
+    interval_z = torch.from_numpy(interval_z).to(training_device)
+
+    alphas = [-1.0, -0.5, 0.0, 0.5, 1.0]
+    for num_of_intervals, alpha in enumerate(alphas):
+        image, _, _ = normalizing_flow.forward(x=latent + alpha * interval_z,
                                                x_label=neg_label + num_of_intervals * interval_label,
                                                reverse=True)
         manipulated_images = torch.cat([manipulated_images,
                                         image.cpu().detach().view(1, 3, args.image_size, args.image_size)], 0)
-    save_image(make_grid(manipulated_images, nrow=5), f'figure/task_2/{args.model}_app_3.jpg')
