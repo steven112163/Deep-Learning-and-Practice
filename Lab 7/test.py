@@ -330,7 +330,7 @@ def generate_manipulated_images(train_dataset: CelebALoader,
     :param training_device: Training device
     :return: None
     """
-    if os.path.exists(f'model/task_2/interval_z_{idx}.npy'):
+    if not os.path.exists(f'model/task_2/interval_z_{idx}.npy'):
         pos_z_mean = torch.zeros_like(latent, dtype=torch.float)
         neg_z_mean = torch.zeros_like(latent, dtype=torch.float)
         num_pos, num_neg = 0, 0
