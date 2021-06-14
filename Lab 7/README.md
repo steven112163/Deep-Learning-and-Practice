@@ -14,8 +14,8 @@
 |`'-n', '--num_levels'`|Number of levels in normalizing flow|3|
 |`'-gv', '--grad_value_clip'`|Clip gradients at specific value|0|
 |`'-gn', '--grad_norm_clip'`|Clip gradients' norm at specific value|0|
-|`'-lrd', '--learning_rate_discriminator'`|Learning rate of discriminator|0.0002|
-|`'-lrg', '--learning_rate_generator'`|Learning rate of generator|0.0002|
+|`'-lrd', '--learning_rate_discriminator'`|Learning rate of discriminator|0.0001|
+|`'-lrg', '--learning_rate_generator'`|Learning rate of generator|0.0004|
 |`'-lrnf', '--learning_rate_normalizing_flow'`|Learning rate of normalizing flow|0.0005|
 |`'-e', '--epochs'`|Number of epochs|300|
 |`'-wu', '--warmup'`|Number of warmup epochs|10|

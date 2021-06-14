@@ -26,9 +26,9 @@ def parse_arguments() -> Namespace:
     parser.add_argument('-n', '--num_levels', default=3, type=int, help='Number of levels in normalizing flow')
     parser.add_argument('-gv', '--grad_value_clip', default=0, type=float, help='Clip gradients at specific value')
     parser.add_argument('-gn', '--grad_norm_clip', default=0, type=float, help="Clip gradients' norm at specific value")
-    parser.add_argument('-lrd', '--learning_rate_discriminator', default=0.0002, type=float,
+    parser.add_argument('-lrd', '--learning_rate_discriminator', default=0.0001, type=float,
                         help='Learning rate of discriminator')
-    parser.add_argument('-lrg', '--learning_rate_generator', default=0.0002, type=float,
+    parser.add_argument('-lrg', '--learning_rate_generator', default=0.0004, type=float,
                         help='Learning rate of generator')
     parser.add_argument('-lrnf', '--learning_rate_normalizing_flow', default=0.0005, type=float,
                         help='Learning rate of normalizing flow')
