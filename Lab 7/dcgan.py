@@ -122,8 +122,7 @@ class DCDiscriminator(nn.Module):
                       kernel_size=4,
                       stride=1,
                       padding=0,
-                      bias=False),
-            nn.Sigmoid()
+                      bias=False)
         )
 
         self.label_to_condition = nn.Sequential(
