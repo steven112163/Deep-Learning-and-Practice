@@ -42,11 +42,21 @@ def train_cgan(data_loader: DataLoader,
     total_g_loss = 0.0
     total_d_loss = 0.0
 
-    criterion = nn.ReLU().to(training_device)
+    if args.model == 'DCGAN':
+        # DCGAN
+        criterion = nn.BCELoss().to(training_device)
+    else:
+        # SAGAN
+        criterion = nn.ReLU().to(training_device)
 
     for batch_idx, batch_data in enumerate(data_loader):
         images, real_labels = batch_data
-        real_labels = real_labels.to(training_device).type(torch.float)
+        if args.model == 'DCGAN':
+            # DCGAN
+            real_labels = real_labels.to(training_device).type(torch.float)
+        else:
+            # SAGAN
+            real_labels = real_labels.to(training_device).type(torch.long)
 
         ############################
         # (1) Update D network
@@ -55,13 +65,17 @@ def train_cgan(data_loader: DataLoader,
         # Format batch
         images = images.to(training_device)
         batch_size = images.size(0)
-        labels = torch.full((batch_size, 1), 1.0, dtype=torch.float, device=training_device)
 
         # Forward pass real batch through discriminator
         outputs = discriminator.forward(images, real_labels)
 
-        # Calculate loss on all-real batch with hinge loss
-        loss_d_real = criterion(1.0 - outputs).mean()
+        # Calculate loss on all-real batch
+        if args.model == 'DCGAN':
+            # DCGAN
+            loss_d_real = criterion(outputs, torch.ones_like(outputs, dtype=torch.float))
+        else:
+            # SAGAN with hinge loss
+            loss_d_real = criterion(1.0 - outputs).mean()
 
         # Train with all-fake batch
         # Generate batch of latent vectors
@@ -74,7 +88,6 @@ def train_cgan(data_loader: DataLoader,
         else:
             # SAGAN
             noise = torch.randn((batch_size, args.image_size)).to(training_device)
-        labels = torch.full((batch_size, 1), 0.0, dtype=torch.float, device=training_device)
 
         # Generate fake image batch with generator
         if args.model == 'DCGAN':
@@ -87,8 +100,13 @@ def train_cgan(data_loader: DataLoader,
         # Forward pass fake batch through discriminator
         outputs = discriminator.forward(fake_outputs.detach(), real_labels)
 
-        # Calculate loss on fake batch with hinge loss
-        loss_d_fake = criterion(1.0 + outputs).mean()
+        # Calculate loss on fake batch
+        if args.model == 'DCGAN':
+            # DCGAN
+            loss_d_fake = criterion(outputs, torch.zeros_like(outputs, dtype=torch.float))
+        else:
+            # SAGAN with hinge loss
+            loss_d_fake = criterion(1.0 + outputs).mean()
 
         # Compute loss of discriminator as sum over the fake and the real batches
         loss_d = loss_d_real + loss_d_fake
@@ -104,10 +122,14 @@ def train_cgan(data_loader: DataLoader,
         ###########################
         # Since we just updated discriminator, perform another forward pass of all-fake batch through discriminator
         outputs = discriminator.forward(fake_outputs, real_labels)
-        labels = torch.full((batch_size, 1), 1.0, dtype=torch.float, device=training_device)
 
-        # Calculate generator's loss based on this output with hinge loss
-        loss_g = -outputs.mean()
+        # Calculate generator's loss based on this output
+        if args.model == 'DCGAN':
+            # DCGAN
+            loss_g = criterion(outputs, torch.ones_like(outputs, dtype=torch.float))
+        else:
+            # SAGAN with hinge loss
+            loss_g = -outputs.mean()
         total_g_loss += loss_g.item()
 
         # Calculate gradients for generator and update
