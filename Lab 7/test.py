@@ -352,8 +352,7 @@ def generate_manipulated_images(data_loader: DataLoader,
             pos_z_mean = (num_pos - len(pos_indices)) / num_pos * pos_z_mean + z[pos_indices].sum(dim=0) / num_pos
         if len(neg_indices) > 0:
             num_neg += len(neg_indices)
-            neg_z_mean = (num_neg - len(neg_indices)) / num_neg * neg_z_mean + z[pos_indices].sum(dim=0) / num_neg
-        break
+            neg_z_mean = (num_neg - len(neg_indices)) / num_neg * neg_z_mean + z[neg_indices].sum(dim=0) / num_neg
     interval_z = pos_z_mean - neg_z_mean
     neg_z_mean = neg_z_mean.to(training_device)
     interval_z = interval_z.to(training_device)
