@@ -354,12 +354,13 @@ def generate_manipulated_images(data_loader: DataLoader,
             num_neg += len(neg_indices)
             neg_z_mean = (num_neg - len(neg_indices)) / num_neg * neg_z_mean + z[pos_indices].sum(dim=0) / num_neg
         break
-    interval_z = 1.6 * (pos_z_mean - neg_z_mean)
+    interval_z = pos_z_mean - neg_z_mean
+    neg_z_mean = neg_z_mean.to(training_device)
     interval_z = interval_z.to(training_device)
 
     alphas = [-1.0, -0.5, 0.0, 0.5, 1.0]
     for num_of_intervals, alpha in enumerate(alphas):
-        image, _, _ = normalizing_flow.forward(x=latent + alpha * interval_z,
+        image, _, _ = normalizing_flow.forward(x=latent + neg_z_mean + alpha * interval_z,
                                                x_label=neg_label + num_of_intervals * interval_label,
                                                reverse=True)
         manipulated_images = torch.cat([manipulated_images,
