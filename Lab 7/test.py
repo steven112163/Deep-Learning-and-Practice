@@ -330,8 +330,8 @@ def generate_manipulated_images(train_dataset: CelebALoader,
     :param training_device: Training device
     :return: None
     """
-    pos_z_mean = torch.zeros_like(latent, dtype=torch.float)
-    neg_z_mean = torch.zeros_like(latent, dtype=torch.float)
+    pos_z_mean = torch.zeros(*(latent.size()), dtype=torch.float)
+    neg_z_mean = torch.zeros(*(latent.size()), dtype=torch.float)
     num_pos, num_neg = 0, 0
     for image, label in train_dataset:
         if label[idx] == 1 or label[idx] == -1:
@@ -339,6 +339,7 @@ def generate_manipulated_images(train_dataset: CelebALoader,
             label = torch.from_numpy(label).to(training_device).type(torch.float).view(1, 40)
 
             z, _, _ = normalizing_flow.forward(x=image, x_label=label)
+            z = z.cpu().detach()
 
             if label[0, idx] == 1:
                 num_pos += 1
@@ -347,6 +348,7 @@ def generate_manipulated_images(train_dataset: CelebALoader,
                 num_neg += 1
                 neg_z_mean = (num_neg - 1) * neg_z_mean / num_neg + z / num_neg
     interval_z = 1.6 * (pos_z_mean - neg_z_mean)
+    interval_z = interval_z.to(training_device)
 
     alphas = [-1.0, -0.5, 0.0, 0.5, 1.0]
     for num_of_intervals, alpha in enumerate(alphas):
