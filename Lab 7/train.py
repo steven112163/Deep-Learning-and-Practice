@@ -1,6 +1,5 @@
 from dcgan import DCGenerator, DCDiscriminator
 from sagan import SAGenerator, SADiscriminator
-from srgan import SRGenerator, SRDiscriminator, GeneratorLoss
 from glow import CGlow, NLLLoss
 from util import debug_log
 from torch.utils.data import DataLoader
@@ -13,8 +12,8 @@ import torch
 
 
 def train_cgan(data_loader: DataLoader,
-               generator: Optional[DCGenerator or SAGenerator or SRGenerator],
-               discriminator: Optional[DCDiscriminator or SADiscriminator or SRDiscriminator],
+               generator: Optional[DCGenerator or SAGenerator],
+               discriminator: Optional[DCDiscriminator or SADiscriminator],
                optimizer_g: optim,
                optimizer_d: optim,
                scheduler_g: optim.lr_scheduler,
@@ -43,17 +42,9 @@ def train_cgan(data_loader: DataLoader,
     total_g_loss = 0.0
     total_d_loss = 0.0
 
-    # SRGAN
-    criterion = GeneratorLoss().to(training_device)
-
     for batch_idx, batch_data in enumerate(data_loader):
         images, real_labels = batch_data
-        if args.model == 'DCGAN' or args.model == 'SRGAN':
-            # DCGAN or SRGAN
-            real_labels = real_labels.to(training_device).type(torch.float)
-        else:
-            # SAGAN
-            real_labels = real_labels.to(training_device).type(torch.long)
+        real_labels = real_labels.to(training_device).type(torch.float)
 
         ############################
         # (1) Update D network
@@ -78,12 +69,9 @@ def train_cgan(data_loader: DataLoader,
                 torch.randn((batch_size, args.image_size)),
                 real_labels.cpu()
             ], 1).view(-1, args.image_size + num_classes, 1, 1).to(training_device)
-        elif args.model == 'SAGAN':
+        else:
             # SAGAN
             noise = torch.randn((batch_size, args.image_size)).to(training_device)
-        else:
-            # SRGAN
-            noise = torch.randn((batch_size, 3, args.image_size, args.image_size)).to(training_device)
         labels = torch.full((batch_size, 1), 0.0, dtype=torch.float, device=training_device)
 
         # Generate fake image batch with generator
@@ -91,7 +79,7 @@ def train_cgan(data_loader: DataLoader,
             # DCGAN
             fake_outputs = generator.forward(noise)
         else:
-            # SAGAN or SRGAN
+            # SAGAN
             fake_outputs = generator.forward(noise, real_labels)
 
         # Forward pass fake batch through discriminator
@@ -116,13 +104,8 @@ def train_cgan(data_loader: DataLoader,
         outputs = discriminator.forward(fake_outputs, real_labels)
         labels = torch.full((batch_size, 1), 1.0, dtype=torch.float, device=training_device)
 
-        # Calculate generator's loss based on this output
-        if args.model == 'DCGAN' or args.model == 'SAGAN':
-            # DCGAN/SAGAN with WGAN
-            loss_g = -outputs.mean()
-        else:
-            # SRGAN
-            loss_g = criterion(outputs, fake_outputs, images)
+        # Calculate generator's loss based on this output with WGAN
+        loss_g = -outputs.mean()
         total_g_loss += loss_g.item()
 
         # Calculate gradients for generator and update

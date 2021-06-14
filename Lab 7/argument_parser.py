@@ -7,8 +7,8 @@ def check_model_type(input_value: str) -> str:
     :param input_value: input string value
     :return: string value
     """
-    if input_value != 'dcgan' and input_value != 'sagan' and input_value != 'srgan' and input_value != 'glow':
-        raise ArgumentTypeError(f'Model should be "dcgan", "sagan", "srgan" or "glow"')
+    if input_value != 'dcgan' and input_value != 'sagan' and input_value != 'glow':
+        raise ArgumentTypeError(f'Model should be "dcgan", "sagan", or "glow"')
     return input_value.upper()
 
 

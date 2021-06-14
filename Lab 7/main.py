@@ -1,6 +1,5 @@
 from dcgan import DCGenerator, DCDiscriminator, weights_init
 from sagan import SAGenerator, SADiscriminator
-from srgan import SRGenerator, SRDiscriminator
 from glow import CGlow, NLLLoss
 from task_1_dataset import ICLEVRLoader
 from task_2_dataset import CelebALoader
@@ -50,20 +49,13 @@ def train_and_evaluate_cgan(train_loader: DataLoader,
                                         image_size=args.image_size).to(training_device)
         generator.apply(weights_init)
         discriminator.apply(weights_init)
-    elif args.model == 'SAGAN':
+    else:
         # Self Attention GAN
         generator = SAGenerator(z_dim=args.image_size,
                                 g_conv_dim=args.image_size // 2,
                                 num_classes=num_classes).to(training_device)
         discriminator = SADiscriminator(d_conv_dim=args.image_size // 2,
                                         num_classes=num_classes).to(training_device)
-    else:
-        # Super Resolution GAN
-        generator = SRGenerator(scale_factor=1,
-                                num_classes=num_classes,
-                                image_size=args.image_size).to(training_device)
-        discriminator = SRDiscriminator(num_classes=num_classes,
-                                        image_size=args.image_size).to(training_device)
 
     if os.path.exists(f'model/task_1/{args.model}.pt'):
         checkpoint = torch.load(f'model/task_1/{args.model}.pt')
