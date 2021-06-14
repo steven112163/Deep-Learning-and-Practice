@@ -63,10 +63,12 @@ def test_cgan(data_loader: DataLoader,
         # Generate fake image batch with generator
         if args.model == 'DCGAN':
             # DCGAN
-            fake_outputs = generator.forward(noise)
+            with torch.no_grad():
+                fake_outputs = generator.forward(noise)
         else:
             # SAGAN or SRGAN
-            fake_outputs = generator.forward(noise, labels)
+            with torch.no_grad():
+                fake_outputs = generator.forward(noise, labels)
 
         # Compute accuracy
         acc = evaluator.eval(fake_outputs, labels)
@@ -110,7 +112,8 @@ def test_cnf(data_loader: DataLoader,
         labels = batch_data
         labels = labels.to(training_device).type(torch.float)
 
-        fake_images, _, _ = normalizing_flow.forward(x=None, x_label=labels, reverse=True)
+        with torch.no_grad():
+            fake_images, _, _ = normalizing_flow.forward(x=None, x_label=labels, reverse=True)
 
         transformed_images = torch.randn(0, 3, args.image_size, args.image_size)
         transformation = transforms.Compose([transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
@@ -196,7 +199,8 @@ def application_one(train_dataset: CelebALoader,
     labels = labels.to(training_device).type(torch.float)
 
     # Produce fake images
-    fake_images, _, _ = normalizing_flow.forward(x=None, x_label=labels, reverse=True)
+    with torch.no_grad():
+        fake_images, _, _ = normalizing_flow.forward(x=None, x_label=labels, reverse=True)
 
     # Save fake images for application 1
     generated_images = torch.randn(0, 3, args.image_size, args.image_size)
@@ -232,8 +236,9 @@ def application_two(train_dataset: CelebALoader,
         second_label = torch.from_numpy(second_label).to(training_device).type(torch.float).view(1, 40)
 
         # Generate latent code
-        first_z, _, _ = normalizing_flow.forward(x=first_image, x_label=first_label)
-        second_z, _, _ = normalizing_flow.forward(x=second_image, x_label=second_label)
+        with torch.no_grad():
+            first_z, _, _ = normalizing_flow.forward(x=first_image, x_label=first_label)
+            second_z, _, _ = normalizing_flow.forward(x=second_image, x_label=second_label)
 
         # Compute interval
         interval_z = (second_z - first_z) / 8.0
@@ -241,9 +246,10 @@ def application_two(train_dataset: CelebALoader,
 
         # Generate linear images
         for num_of_intervals in range(9):
-            image, _, _ = normalizing_flow.forward(x=first_z + num_of_intervals * interval_z,
-                                                   x_label=first_label + num_of_intervals * interval_label,
-                                                   reverse=True)
+            with torch.no_grad():
+                image, _, _ = normalizing_flow.forward(x=first_z + num_of_intervals * interval_z,
+                                                       x_label=first_label + num_of_intervals * interval_label,
+                                                       reverse=True)
             linear_images = torch.cat([linear_images,
                                        image.cpu().detach().view(1, 3, args.image_size, args.image_size)], 0)
     save_image(make_grid(linear_images, nrow=9), f'figure/task_2/{args.model}_app_2.jpg')
@@ -267,7 +273,8 @@ def application_three(data_loader: DataLoader,
     image, label = train_dataset[1]
     image = image.to(training_device).type(torch.float).view(1, 3, args.image_size, args.image_size)
     label = torch.from_numpy(label).to(training_device).type(torch.float).view(1, 40)
-    latent, _, _ = normalizing_flow.forward(x=image, x_label=label)
+    with torch.no_grad():
+        latent, _, _ = normalizing_flow.forward(x=image, x_label=label)
 
     # Get negative labels
     neg_smiling_label = torch.clone(label)
@@ -344,7 +351,8 @@ def generate_manipulated_images(data_loader: DataLoader,
         pos_indices = (labels[:, idx] == 1).nonzero(as_tuple=True)[0]
         neg_indices = (labels[:, idx] == -1).nonzero(as_tuple=True)[0]
 
-        z, _, _ = normalizing_flow.forward(x=images, x_label=labels)
+        with torch.no_grad():
+            z, _, _ = normalizing_flow.forward(x=images, x_label=labels)
         z = z.cpu().detach()
 
         if len(pos_indices) > 0:
@@ -359,9 +367,10 @@ def generate_manipulated_images(data_loader: DataLoader,
 
     alphas = [-1.0, -0.5, 0.0, 0.5, 1.0]
     for num_of_intervals, alpha in enumerate(alphas):
-        image, _, _ = normalizing_flow.forward(x=latent + neg_z_mean + alpha * interval_z,
-                                               x_label=neg_label + num_of_intervals * interval_label,
-                                               reverse=True)
+        with torch.no_grad():
+            image, _, _ = normalizing_flow.forward(x=latent + neg_z_mean + alpha * interval_z,
+                                                   x_label=neg_label + num_of_intervals * interval_label,
+                                                   reverse=True)
         manipulated_images = torch.cat([manipulated_images,
                                         image.cpu().detach().view(1, 3, args.image_size, args.image_size)], 0)
 
