@@ -65,15 +65,9 @@ def test_cgan(data_loader: DataLoader,
         # Compute accuracy
         acc = evaluator.eval(fake_outputs, labels)
         total_accuracy += acc
-
-        # Generate images from fake images
-        transformation = transforms.Compose([transforms.Normalize(mean=[0., 0., 0.],
-                                                                  std=[1 / 0.5, 1 / 0.5, 1 / 0.5]),
-                                             transforms.Normalize(mean=[-0.5, -0.5, -0.5],
-                                                                  std=[1., 1., 1.]),
-                                             ])
         for fake_image in fake_outputs:
-            n_image = transformation(fake_image.cpu().detach())
+            n_image = fake_image.cpu().detach()
+            n_image = ((n_image + 1) / 2.0).clamp_(0, 1)
             norm_image = torch.cat([norm_image, n_image.view(1, 3, args.image_size, args.image_size)], 0)
 
         debug_log(f'[{epoch + 1}/{args.epochs}][{batch_idx + 1}/{len(data_loader)}]   Accuracy: {acc}', args.verbosity)
