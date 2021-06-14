@@ -289,26 +289,26 @@ def application_three(data_loader: DataLoader,
     manipulated_images = torch.randn(0, 3, args.image_size, args.image_size)
 
     # Generate smiling
-    generate_manipulated_images(data_loader=data_loader,
-                                normalizing_flow=normalizing_flow,
-                                latent=latent,
-                                neg_label=neg_smiling_label,
-                                interval_label=interval_smiling_label,
-                                manipulated_images=manipulated_images,
-                                idx=31,
-                                args=args,
-                                training_device=training_device)
+    manipulated_images = generate_manipulated_images(data_loader=data_loader,
+                                                     normalizing_flow=normalizing_flow,
+                                                     latent=latent,
+                                                     neg_label=neg_smiling_label,
+                                                     interval_label=interval_smiling_label,
+                                                     manipulated_images=manipulated_images,
+                                                     idx=31,
+                                                     args=args,
+                                                     training_device=training_device)
 
     # Generate bald
-    generate_manipulated_images(data_loader=data_loader,
-                                normalizing_flow=normalizing_flow,
-                                latent=latent,
-                                neg_label=neg_bald_label,
-                                interval_label=interval_bald_label,
-                                manipulated_images=manipulated_images,
-                                idx=4,
-                                args=args,
-                                training_device=training_device)
+    manipulated_images = generate_manipulated_images(data_loader=data_loader,
+                                                     normalizing_flow=normalizing_flow,
+                                                     latent=latent,
+                                                     neg_label=neg_bald_label,
+                                                     interval_label=interval_bald_label,
+                                                     manipulated_images=manipulated_images,
+                                                     idx=4,
+                                                     args=args,
+                                                     training_device=training_device)
 
     save_image(make_grid(manipulated_images, nrow=5), f'figure/task_2/{args.model}_app_3.jpg')
 
@@ -321,7 +321,7 @@ def generate_manipulated_images(data_loader: DataLoader,
                                 manipulated_images: torch.Tensor,
                                 idx: int,
                                 args: Namespace,
-                                training_device: device) -> None:
+                                training_device: device) -> torch.Tensor:
     """
     Generate images with manipulated attribute
     :param data_loader: Training data loader
@@ -333,7 +333,7 @@ def generate_manipulated_images(data_loader: DataLoader,
     :param idx: Index of the target attribute
     :param args: All arguments
     :param training_device: Training device
-    :return: None
+    :return: Manipulated images
     """
     pos_z_mean = torch.zeros(*(latent.size()), dtype=torch.float)
     neg_z_mean = torch.zeros(*(latent.size()), dtype=torch.float)
@@ -364,3 +364,5 @@ def generate_manipulated_images(data_loader: DataLoader,
                                                reverse=True)
         manipulated_images = torch.cat([manipulated_images,
                                         image.cpu().detach().view(1, 3, args.image_size, args.image_size)], 0)
+
+    return manipulated_images
