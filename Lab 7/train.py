@@ -42,6 +42,8 @@ def train_cgan(data_loader: DataLoader,
     total_g_loss = 0.0
     total_d_loss = 0.0
 
+    criterion = nn.ReLU().to(training_device)
+
     for batch_idx, batch_data in enumerate(data_loader):
         images, real_labels = batch_data
         real_labels = real_labels.to(training_device).type(torch.float)
@@ -58,8 +60,8 @@ def train_cgan(data_loader: DataLoader,
         # Forward pass real batch through discriminator
         outputs = discriminator.forward(images, real_labels)
 
-        # Calculate loss on all-real batch with WGAN
-        loss_d_real = -outputs.mean()
+        # Calculate loss on all-real batch with hinge loss
+        loss_d_real = criterion(1.0 - outputs).mean()
 
         # Train with all-fake batch
         # Generate batch of latent vectors
@@ -85,8 +87,8 @@ def train_cgan(data_loader: DataLoader,
         # Forward pass fake batch through discriminator
         outputs = discriminator.forward(fake_outputs.detach(), real_labels)
 
-        # Calculate loss on fake batch with WGAN
-        loss_d_fake = outputs.mean()
+        # Calculate loss on fake batch with hinge loss
+        loss_d_fake = criterion(1.0 + outputs).mean()
 
         # Compute loss of discriminator as sum over the fake and the real batches
         loss_d = loss_d_real + loss_d_fake
@@ -104,7 +106,7 @@ def train_cgan(data_loader: DataLoader,
         outputs = discriminator.forward(fake_outputs, real_labels)
         labels = torch.full((batch_size, 1), 1.0, dtype=torch.float, device=training_device)
 
-        # Calculate generator's loss based on this output with WGAN
+        # Calculate generator's loss based on this output with hinge loss
         loss_g = -outputs.mean()
         total_g_loss += loss_g.item()
 
