@@ -132,13 +132,15 @@ def test_cnf(data_loader: DataLoader,
     return generated_image, total_accuracy
 
 
-def inference_celeb(train_dataset: CelebALoader,
+def inference_celeb(data_loader: DataLoader,
+                    train_dataset: CelebALoader,
                     normalizing_flow: CGlow,
                     num_classes: int,
                     args: Namespace,
                     training_device: device) -> None:
     """
     Use cNF to inference celebrity data with 3 applications
+    :param data_loader: Training data loader
     :param train_dataset: Training dataset
     :param normalizing_flow: Conditional normalizing flow model
     :param num_classes: Number of classes (attributes)
@@ -165,7 +167,8 @@ def inference_celeb(train_dataset: CelebALoader,
 
     # Application 3
     debug_log(f'Perform app 3', args.verbosity)
-    application_three(train_dataset=train_dataset,
+    application_three(data_loader=data_loader,
+                      train_dataset=train_dataset,
                       normalizing_flow=normalizing_flow,
                       args=args,
                       training_device=training_device)
@@ -246,12 +249,14 @@ def application_two(train_dataset: CelebALoader,
     save_image(make_grid(linear_images, nrow=9), f'figure/task_2/{args.model}_app_2.jpg')
 
 
-def application_three(train_dataset: CelebALoader,
+def application_three(data_loader: DataLoader,
+                      train_dataset: CelebALoader,
                       normalizing_flow: CGlow,
                       args: Namespace,
                       training_device: device) -> None:
     """
     Application three
+    :param data_loader: Training data loader
     :param train_dataset: Training dataset
     :param normalizing_flow: Conditional normalizing flow model
     :param args: All arguments
@@ -284,7 +289,7 @@ def application_three(train_dataset: CelebALoader,
     manipulated_images = torch.randn(0, 3, args.image_size, args.image_size)
 
     # Generate smiling
-    generate_manipulated_images(train_dataset=train_dataset,
+    generate_manipulated_images(data_loader=data_loader,
                                 normalizing_flow=normalizing_flow,
                                 latent=latent,
                                 neg_label=neg_smiling_label,
@@ -295,7 +300,7 @@ def application_three(train_dataset: CelebALoader,
                                 training_device=training_device)
 
     # Generate bald
-    generate_manipulated_images(train_dataset=train_dataset,
+    generate_manipulated_images(data_loader=data_loader,
                                 normalizing_flow=normalizing_flow,
                                 latent=latent,
                                 neg_label=neg_bald_label,
@@ -308,7 +313,7 @@ def application_three(train_dataset: CelebALoader,
     save_image(make_grid(manipulated_images, nrow=5), f'figure/task_2/{args.model}_app_3.jpg')
 
 
-def generate_manipulated_images(train_dataset: CelebALoader,
+def generate_manipulated_images(data_loader: DataLoader,
                                 normalizing_flow: CGlow,
                                 latent: torch.Tensor,
                                 neg_label: torch.Tensor,
@@ -319,7 +324,7 @@ def generate_manipulated_images(train_dataset: CelebALoader,
                                 training_device: device) -> None:
     """
     Generate images with manipulated attribute
-    :param train_dataset: Training dataset
+    :param data_loader: Training data loader
     :param normalizing_flow: Conditional normalizing flow model
     :param latent: Latent code of the target image
     :param neg_label: Label with negative target attribute
@@ -333,20 +338,22 @@ def generate_manipulated_images(train_dataset: CelebALoader,
     pos_z_mean = torch.zeros(*(latent.size()), dtype=torch.float)
     neg_z_mean = torch.zeros(*(latent.size()), dtype=torch.float)
     num_pos, num_neg = 0, 0
-    for image, label in train_dataset:
-        if label[idx] == 1 or label[idx] == -1:
-            image = image.to(training_device).type(torch.float).view(1, 3, args.image_size, args.image_size)
-            label = torch.from_numpy(label).to(training_device).type(torch.float).view(1, 40)
+    for images, labels in data_loader:
+        images = images.to(training_device)
+        labels = labels.to(training_device).type(torch.float)
+        pos_indices = (labels[:, idx] == 1).nonzero(as_tuple=True)[0]
+        neg_indices = (labels[:, idx] == -1).nonzero(as_tuple=True)[0]
 
-            z, _, _ = normalizing_flow.forward(x=image, x_label=label)
-            z = z.cpu().detach()
+        z, _, _ = normalizing_flow.forward(x=images, x_label=labels)
+        z = z.cpu().detach()
 
-            if label[0, idx] == 1:
-                num_pos += 1
-                pos_z_mean = (num_pos - 1) * pos_z_mean / num_pos + z / num_pos
-            elif label[0, idx] == -1:
-                num_neg += 1
-                neg_z_mean = (num_neg - 1) * neg_z_mean / num_neg + z / num_neg
+        if len(pos_indices) > 0:
+            num_pos += len(pos_indices)
+            pos_z_mean = (num_pos - len(pos_indices)) / num_pos * pos_z_mean + z[pos_indices].sum(dim=0) / num_pos
+        if len(neg_indices) > 0:
+            num_neg += len(neg_indices)
+            neg_z_mean = (num_neg - len(neg_indices)) / num_neg * neg_z_mean + z[pos_indices].sum(dim=0) / num_neg
+        break
     interval_z = 1.6 * (pos_z_mean - neg_z_mean)
     interval_z = interval_z.to(training_device)
 

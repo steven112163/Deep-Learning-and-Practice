@@ -356,7 +356,8 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
             print(f'[{epoch + 1}/{args.epochs}]   Average loss: {losses[epoch]}')
 
             # 3 applications
-            inference_celeb(train_dataset=train_dataset,
+            inference_celeb(data_loader=train_loader,
+                            train_dataset=train_dataset,
                             normalizing_flow=normalizing_flow,
                             num_classes=num_classes,
                             args=args,
@@ -374,7 +375,8 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
     else:
         # Start inferring
         info_log('Start inferring', args.verbosity)
-        inference_celeb(train_dataset=train_dataset,
+        inference_celeb(data_loader=train_loader,
+                        train_dataset=train_dataset,
                         normalizing_flow=normalizing_flow,
                         num_classes=num_classes,
                         args=args,
