@@ -207,7 +207,7 @@ def train_and_evaluate_cnf(train_loader: DataLoader,
                              num_classes=num_classes,
                              image_size=args.image_size).to(training_device)
     if os.path.exists(f'model/task_1/{args.model}.pt'):
-        checkpoint = torch.load(f'/model/task_1/{args.model}.pt')
+        checkpoint = torch.load(f'model/task_1/{args.model}.pt')
         normalizing_flow.load_state_dict(checkpoint['normalizing_flow'])
 
     optimizer = optim.Adamax(normalizing_flow.parameters(), lr=args.learning_rate_normalizing_flow, weight_decay=5e-5)
@@ -328,7 +328,7 @@ def train_and_inference_celeb(train_dataset: CelebALoader,
                              num_classes=num_classes,
                              image_size=args.image_size).to(training_device)
     if os.path.exists(f'model/task_2/{args.model}.pt'):
-        checkpoint = torch.load(f'/model/task_2/{args.model}.pt')
+        checkpoint = torch.load(f'model/task_2/{args.model}.pt')
         normalizing_flow.load_state_dict(checkpoint['normalizing_flow'])
 
     optimizer = optim.Adamax(normalizing_flow.parameters(), lr=args.learning_rate_normalizing_flow, weight_decay=5e-5)
