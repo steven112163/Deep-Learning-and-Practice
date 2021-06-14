@@ -39,28 +39,14 @@ def test_cgan(data_loader: DataLoader,
         labels = labels.to(training_device).type(torch.float)
 
         # Generate batch of latent vectors
-        if args.model == 'DCGAN':
-            # DCGAN
-            noise = torch.cat([
-                torch.randn((batch_size, args.image_size)),
-                labels.clone().cpu()
-            ], 1).view(-1, args.image_size + num_classes, 1, 1).to(training_device)
-        elif args.model == 'SAGAN':
-            # SAGAN
-            noise = torch.randn((batch_size, args.image_size)).to(training_device)
-        else:
-            # SRGAN
-            noise = torch.randn((batch_size, 3, args.image_size, args.image_size)).to(training_device)
+        noise = torch.cat([
+            torch.randn((batch_size, args.image_size)),
+            torch.clone(labels).cpu().detach()
+        ], 1).view(-1, args.image_size + num_classes, 1, 1).to(training_device)
 
         # Generate fake image batch with generator
-        if args.model == 'DCGAN':
-            # DCGAN
-            with torch.no_grad():
-                fake_outputs = generator.forward(noise)
-        else:
-            # SAGAN or SRGAN
-            with torch.no_grad():
-                fake_outputs = generator.forward(noise, labels)
+        with torch.no_grad():
+            fake_outputs = generator.forward(noise)
 
         # Compute accuracy
         acc = evaluator.eval(fake_outputs, labels)
