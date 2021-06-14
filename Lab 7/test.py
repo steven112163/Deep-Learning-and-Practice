@@ -1,6 +1,5 @@
 from dcgan import DCGenerator
 from sagan import SAGenerator
-from srgan import SRGenerator
 from glow import CGlow
 from task_2_dataset import CelebALoader
 from evaluator import EvaluationModel
@@ -11,13 +10,11 @@ from torchvision.utils import save_image, make_grid
 from torch import device
 from typing import Tuple, Optional
 from argparse import Namespace
-import numpy as np
 import torch
-import os
 
 
 def test_cgan(data_loader: DataLoader,
-              generator: Optional[DCGenerator or SAGenerator or SRGenerator],
+              generator: Optional[DCGenerator or SAGenerator],
               num_classes: int,
               epoch: int,
               evaluator: EvaluationModel,
