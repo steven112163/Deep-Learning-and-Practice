@@ -66,7 +66,7 @@ def train_cgan(data_loader: DataLoader,
         # Generate batch of latent vectors
         noise = torch.cat([
             torch.randn((batch_size, args.image_size)),
-            real_labels.cpu()
+            real_labels.clone().cpu()
         ], 1).view(-1, args.image_size + num_classes, 1, 1).to(training_device)
 
         # Generate fake image batch with generator

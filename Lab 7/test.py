@@ -43,7 +43,7 @@ def test_cgan(data_loader: DataLoader,
             # DCGAN
             noise = torch.cat([
                 torch.randn((batch_size, args.image_size)),
-                labels.cpu()
+                labels.clone().cpu()
             ], 1).view(-1, args.image_size + num_classes, 1, 1).to(training_device)
         elif args.model == 'SAGAN':
             # SAGAN
