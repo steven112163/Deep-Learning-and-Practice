@@ -51,12 +51,7 @@ def train_cgan(data_loader: DataLoader,
 
     for batch_idx, batch_data in enumerate(data_loader):
         images, real_labels = batch_data
-        if args.model == 'DCGAN':
-            # DCGAN
-            real_labels = real_labels.to(training_device).type(torch.float)
-        else:
-            # SAGAN
-            real_labels = real_labels.to(training_device).type(torch.long)
+        real_labels = real_labels.to(training_device).type(torch.float)
 
         ############################
         # (1) Update D network
@@ -79,23 +74,13 @@ def train_cgan(data_loader: DataLoader,
 
         # Train with all-fake batch
         # Generate batch of latent vectors
-        if args.model == 'DCGAN':
-            # DCGAN
-            noise = torch.cat([
-                torch.randn((batch_size, args.image_size)),
-                real_labels.cpu()
-            ], 1).view(-1, args.image_size + num_classes, 1, 1).to(training_device)
-        else:
-            # SAGAN
-            noise = torch.randn((batch_size, args.image_size)).to(training_device)
+        noise = torch.cat([
+            torch.randn((batch_size, args.image_size)),
+            real_labels.cpu()
+        ], 1).view(-1, args.image_size + num_classes, 1, 1).to(training_device)
 
         # Generate fake image batch with generator
-        if args.model == 'DCGAN':
-            # DCGAN
-            fake_outputs = generator.forward(noise)
-        else:
-            # SAGAN
-            fake_outputs = generator.forward(noise, real_labels)
+        fake_outputs = generator.forward(noise)
 
         # Forward pass fake batch through discriminator
         outputs = discriminator.forward(fake_outputs.detach(), real_labels)

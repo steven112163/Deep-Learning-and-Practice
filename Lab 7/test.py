@@ -36,12 +36,7 @@ def test_cgan(data_loader: DataLoader,
     for batch_idx, batch_data in enumerate(data_loader):
         labels = batch_data
         batch_size = len(labels)
-        if args.model == 'DCGAN' or args.model == 'SRGAN':
-            # DCGAN or SRGAN
-            labels = labels.to(training_device).type(torch.float)
-        else:
-            # SAGAN
-            labels = labels.to(training_device).type(torch.long)
+        labels = labels.to(training_device).type(torch.float)
 
         # Generate batch of latent vectors
         if args.model == 'DCGAN':

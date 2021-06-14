@@ -1,274 +1,265 @@
-from torch.nn.utils import spectral_norm
-from torch.nn.init import xavier_uniform_
-import torch
+from torch.nn import Parameter
 import torch.nn as nn
-import torch.nn.functional as F
+import numpy as np
+import torch
 
 
-def init_weights(m):
-    if type(m) == nn.Linear or type(m) == nn.Conv2d:
-        xavier_uniform_(m.weight)
-        m.bias.data.fill_(0.)
+class SelfAttn(nn.Module):
+    def __init__(self, in_dim: int):
+        super(SelfAttn, self).__init__()
+        self.channel_in = in_dim
 
+        self.query_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim // 8, kernel_size=1)
+        self.key_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim // 8, kernel_size=1)
+        self.value_conv = nn.Conv2d(in_channels=in_dim, out_channels=in_dim, kernel_size=1)
+        self.gamma = nn.Parameter(torch.zeros(1))
 
-def snconv2d(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
-    return spectral_norm(nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size,
-                                   stride=stride, padding=padding, dilation=dilation, groups=groups, bias=bias))
-
-
-def snlinear(in_features, out_features):
-    return spectral_norm(nn.Linear(in_features=in_features, out_features=out_features))
-
-
-def sn_embedding(num_embeddings, embedding_dim):
-    return spectral_norm(nn.Embedding(num_embeddings=num_embeddings, embedding_dim=embedding_dim))
-
-
-class Self_Attn(nn.Module):
-    """ Self attention Layer"""
-
-    def __init__(self, in_channels):
-        super(Self_Attn, self).__init__()
-        self.in_channels = in_channels
-        self.snconv1x1_theta = snconv2d(in_channels=in_channels, out_channels=in_channels // 8, kernel_size=1, stride=1,
-                                        padding=0)
-        self.snconv1x1_phi = snconv2d(in_channels=in_channels, out_channels=in_channels // 8, kernel_size=1, stride=1,
-                                      padding=0)
-        self.snconv1x1_g = snconv2d(in_channels=in_channels, out_channels=in_channels // 2, kernel_size=1, stride=1,
-                                    padding=0)
-        self.snconv1x1_attn = snconv2d(in_channels=in_channels // 2, out_channels=in_channels, kernel_size=1, stride=1,
-                                       padding=0)
-        self.maxpool = nn.MaxPool2d(2, stride=2, padding=0)
         self.softmax = nn.Softmax(dim=-1)
-        self.sigma = nn.Parameter(torch.zeros(1))
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
         """
-            inputs :
-                x : input feature maps(B X C X W X H)
-            returns :
-                out : self attention value + input feature
-                attention: B X N X N (N is Width*Height)
+        Forwarding
+        :param x: Batched data
+        :return: Self attention value + input feature
         """
-        _, ch, h, w = x.size()
-        # Theta path
-        theta = self.snconv1x1_theta(x)
-        theta = theta.view(-1, ch // 8, h * w)
-        # Phi path
-        phi = self.snconv1x1_phi(x)
-        phi = self.maxpool(phi)
-        phi = phi.view(-1, ch // 8, h * w // 4)
-        # Attn map
-        attn = torch.bmm(theta.permute(0, 2, 1), phi)
-        attn = self.softmax(attn)
-        # g path
-        g = self.snconv1x1_g(x)
-        g = self.maxpool(g)
-        g = g.view(-1, ch // 2, h * w // 4)
-        # Attn_g
-        attn_g = torch.bmm(g, attn.permute(0, 2, 1))
-        attn_g = attn_g.view(-1, ch // 2, h, w)
-        attn_g = self.snconv1x1_attn(attn_g)
-        # Out
-        out = x + self.sigma * attn_g
-        return out
+        batch_size, channel_size, width, height = x.size()
+        proj_query = self.query_conv(x).view(batch_size, -1, width * height).permute(0, 2, 1)  # B X CX(N)
+        proj_key = self.key_conv(x).view(batch_size, -1, width * height)  # B X C x (*W*H)
+        energy = torch.bmm(proj_query, proj_key)  # transpose check
+        attention = self.softmax(energy)  # BX (N) X (N)
+        proj_value = self.value_conv(x).view(batch_size, -1, width * height)  # B X C X N
+
+        out = torch.bmm(proj_value, attention.permute(0, 2, 1))
+        out = out.view(batch_size, channel_size, width, height)
+        return self.gamma * out + x
 
 
-class ConditionalBatchNorm2d(nn.Module):
-    # https://github.com/pytorch/pytorch/issues/8985#issuecomment-405080775
-    def __init__(self, num_features, num_classes):
-        super().__init__()
-        self.num_features = num_features
-        self.bn = nn.BatchNorm2d(num_features, momentum=0.001, affine=False)
-        self.embed = nn.Embedding(num_classes, num_features)
-        # self.embed.weight.data[:, :num_features].normal_(1, 0.02)  # Initialise scale at N(1, 0.02)
-        self.embed.weight.data[:, :num_features].fill_(1.)  # Initialize scale to 1
-        self.embed.weight.data[:, num_features:].zero_()  # Initialize bias at 0
-
-    def forward(self, x, y):
-        out = self.bn(x)
-        gamma, beta = self.embed(y).chunk(2, 1)
-        # Modified
-        gamma = torch.sum(gamma, dim=[1]).reshape(-1, self.num_features, 1, 1)
-        beta = torch.sum(beta, dim=[1]).reshape(-1, self.num_features, 1, 1)
-        out = gamma * out + beta
-        return out
+def l2normalize(v: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
+    """
+    L2 normalize
+    :param v: Batched data
+    :param eps: Value to avoid divided by 0
+    :return: L2 normalized data
+    """
+    return v / (v.norm() + eps)
 
 
-class GenBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, num_classes):
-        super(GenBlock, self).__init__()
-        self.cond_bn1 = ConditionalBatchNorm2d(in_channels, num_classes)
-        self.relu = nn.ReLU(inplace=True)
-        self.snconv2d1 = snconv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=1,
-                                  padding=1)
-        self.cond_bn2 = ConditionalBatchNorm2d(out_channels, num_classes)
-        self.snconv2d2 = snconv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=1,
-                                  padding=1)
-        self.snconv2d0 = snconv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=1,
-                                  padding=0)
+class SpectralNorm(nn.Module):
+    def __init__(self, module, name='weight', power_iterations=1):
+        super(SpectralNorm, self).__init__()
+        self.module = module
+        self.name = name
+        self.power_iterations = power_iterations
+        if not self._made_params():
+            self._make_params()
 
-    def forward(self, x, labels):
-        x0 = x
+    def _update_u_v(self):
+        u = getattr(self.module, self.name + "_u")
+        v = getattr(self.module, self.name + "_v")
+        w = getattr(self.module, self.name + "_bar")
 
-        x = self.cond_bn1(x, labels)
-        x = self.relu(x)
-        x = F.interpolate(x, scale_factor=2, mode='nearest')  # upsample
-        x = self.snconv2d1(x)
-        x = self.cond_bn2(x, labels)
-        x = self.relu(x)
-        x = self.snconv2d2(x)
+        height = w.data.shape[0]
+        for _ in range(self.power_iterations):
+            v.data = l2normalize(torch.mv(torch.t(w.view(height, -1).data), u.data))
+            u.data = l2normalize(torch.mv(w.view(height, -1).data, v.data))
 
-        x0 = F.interpolate(x0, scale_factor=2, mode='nearest')  # upsample
-        x0 = self.snconv2d0(x0)
+        # sigma = torch.dot(u.data, torch.mv(w.view(height,-1).data, v.data))
+        sigma = u.dot(w.view(height, -1).mv(v))
+        setattr(self.module, self.name, w / sigma.expand_as(w))
 
-        out = x + x0
-        return out
+    def _made_params(self):
+        try:
+            u = getattr(self.module, self.name + "_u")
+            v = getattr(self.module, self.name + "_v")
+            w = getattr(self.module, self.name + "_bar")
+            return True
+        except AttributeError:
+            return False
+
+    def _make_params(self):
+        w = getattr(self.module, self.name)
+
+        height = w.data.shape[0]
+        width = w.view(height, -1).data.shape[1]
+
+        u = Parameter(w.data.new(height).normal_(0, 1), requires_grad=False)
+        v = Parameter(w.data.new(width).normal_(0, 1), requires_grad=False)
+        u.data = l2normalize(u.data)
+        v.data = l2normalize(v.data)
+        w_bar = Parameter(w.data)
+
+        del self.module._parameters[self.name]
+
+        self.module.register_parameter(self.name + "_u", u)
+        self.module.register_parameter(self.name + "_v", v)
+        self.module.register_parameter(self.name + "_bar", w_bar)
+
+    def forward(self, *args):
+        self._update_u_v()
+        return self.module.forward(*args)
 
 
 class SAGenerator(nn.Module):
-    """Generator."""
-
-    def __init__(self, z_dim: int, g_conv_dim: int, num_classes: int):
+    def __init__(self, noise_size: int, label_size: int, conv_dim: int):
         super(SAGenerator, self).__init__()
 
-        self.z_dim = z_dim
-        self.g_conv_dim = g_conv_dim
-        self.snlinear0 = snlinear(in_features=z_dim, out_features=g_conv_dim * 16 * (z_dim // 32) ** 2)
-        self.block1 = GenBlock(g_conv_dim * 16, g_conv_dim * 16, num_classes)
-        self.block2 = GenBlock(g_conv_dim * 16, g_conv_dim * 8, num_classes)
-        self.block3 = GenBlock(g_conv_dim * 8, g_conv_dim * 4, num_classes)
-        self.self_attn = Self_Attn(g_conv_dim * 4)
-        self.block4 = GenBlock(g_conv_dim * 4, g_conv_dim * 2, num_classes)
-        self.block5 = GenBlock(g_conv_dim * 2, g_conv_dim, num_classes)
-        self.bn = nn.BatchNorm2d(g_conv_dim, eps=1e-5, momentum=0.0001, affine=True)
-        self.relu = nn.ReLU(inplace=True)
-        self.snconv2d1 = snconv2d(in_channels=g_conv_dim, out_channels=3, kernel_size=3, stride=1, padding=1)
-        self.tanh = nn.Tanh()
+        layer1 = []
+        layer2 = []
+        layer3 = []
+        last = []
 
-        # Weight init
-        self.apply(init_weights)
+        repeat_num = int(np.log2(noise_size)) - 3
+        multi = 2 ** repeat_num  # 8
+        layer1.append(SpectralNorm(nn.ConvTranspose2d(noise_size + label_size, conv_dim * multi, 4)))
+        layer1.append(nn.BatchNorm2d(conv_dim * multi))
+        layer1.append(nn.ReLU())
 
-    def forward(self, z, labels):
-        # n x z_dim
-        act0 = self.snlinear0(z)  # n x g_conv_dim*16*(z_dim // 32)*(z_dim // 32)
-        act0 = act0.view(-1,
-                         self.g_conv_dim * 16,
-                         (self.z_dim // 32),
-                         (self.z_dim // 32))  # n x g_conv_dim*16 x (z_dim // 32) x (z_dim // 32)
-        act1 = self.block1(act0, labels)  # n x g_conv_dim*16 x (z_dim // 16) x (z_dim // 16)
-        act2 = self.block2(act1, labels)  # n x g_conv_dim*8 x (z_dim // 8) x (z_dim // 8)
-        act3 = self.block3(act2, labels)  # n x g_conv_dim*4 x (z_dim // 4) x (z_dim // 4)
-        act3 = self.self_attn(act3)  # n x g_conv_dim*4 x (z_dim // 4) x (z_dim // 4)
-        act4 = self.block4(act3, labels)  # n x g_conv_dim*2 x (z_dim // 2) x (z_dim // 2)
-        act5 = self.block5(act4, labels)  # n x g_conv_dim  x z_dim x z_dim
-        act5 = self.bn(act5)  # n x g_conv_dim  x z_dim x z_dim
-        act5 = self.relu(act5)  # n x g_conv_dim  x z_dim x z_dim
-        act6 = self.snconv2d1(act5)  # n x 3 x z_dim x z_dim
-        act6 = self.tanh(act6)  # n x 3 x z_dim x z_dim
-        return act6
+        curr_dim = conv_dim * multi
 
+        layer2.append(SpectralNorm(nn.ConvTranspose2d(curr_dim, int(curr_dim / 2), 4, 2, 1)))
+        layer2.append(nn.BatchNorm2d(int(curr_dim / 2)))
+        layer2.append(nn.ReLU())
 
-class DiscOptBlock(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(DiscOptBlock, self).__init__()
-        self.snconv2d1 = snconv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=1,
-                                  padding=1)
-        self.relu = nn.ReLU(inplace=True)
-        self.snconv2d2 = snconv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=1,
-                                  padding=1)
-        self.downsample = nn.AvgPool2d(2)
-        self.snconv2d0 = snconv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=1,
-                                  padding=0)
+        curr_dim = int(curr_dim / 2)
 
-    def forward(self, x):
-        x0 = x
+        layer3.append(SpectralNorm(nn.ConvTranspose2d(curr_dim, int(curr_dim / 2), 4, 2, 1)))
+        layer3.append(nn.BatchNorm2d(int(curr_dim / 2)))
+        layer3.append(nn.ReLU())
 
-        x = self.snconv2d1(x)
-        x = self.relu(x)
-        x = self.snconv2d2(x)
-        x = self.downsample(x)
+        if noise_size == 64:
+            layer4 = []
+            curr_dim = int(curr_dim / 2)
+            layer4.append(SpectralNorm(nn.ConvTranspose2d(curr_dim, int(curr_dim / 2), 4, 2, 1)))
+            layer4.append(nn.BatchNorm2d(int(curr_dim / 2)))
+            layer4.append(nn.ReLU())
+            self.l4 = nn.Sequential(*layer4)
+            curr_dim = int(curr_dim / 2)
 
-        x0 = self.downsample(x0)
-        x0 = self.snconv2d0(x0)
+        self.l1 = nn.Sequential(*layer1)
+        self.l2 = nn.Sequential(*layer2)
+        self.l3 = nn.Sequential(*layer3)
 
-        out = x + x0
-        return out
+        last.append(nn.ConvTranspose2d(curr_dim, 3, 4, 2, 1))
+        last.append(nn.Tanh())
+        self.last = nn.Sequential(*last)
 
+        self.attn1 = SelfAttn(128)
+        self.attn2 = SelfAttn(64)
 
-class DiscBlock(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(DiscBlock, self).__init__()
-        self.relu = nn.ReLU(inplace=True)
-        self.snconv2d1 = snconv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=1,
-                                  padding=1)
-        self.snconv2d2 = snconv2d(in_channels=out_channels, out_channels=out_channels, kernel_size=3, stride=1,
-                                  padding=1)
-        self.downsample = nn.AvgPool2d(2)
-        self.ch_mismatch = False
-        if in_channels != out_channels:
-            self.ch_mismatch = True
-        self.snconv2d0 = snconv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=1,
-                                  padding=0)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forwarding
+        :param x: Batched noises and labels
+        :return: Fake images
+        """
+        x = x.view(x.size(0), x.size(1), 1, 1)
+        out = self.l1(x)
+        out = self.l2(out)
+        out = self.l3(out)
+        out = self.attn1(out)
+        out = self.l4(out)
+        out = self.attn2(out)
+        out = self.last(out)
 
-    def forward(self, x, downsample=True):
-        x0 = x
-
-        x = self.relu(x)
-        x = self.snconv2d1(x)
-        x = self.relu(x)
-        x = self.snconv2d2(x)
-        if downsample:
-            x = self.downsample(x)
-
-        if downsample or self.ch_mismatch:
-            x0 = self.snconv2d0(x0)
-            if downsample:
-                x0 = self.downsample(x0)
-
-        out = x + x0
         return out
 
 
 class SADiscriminator(nn.Module):
-    """Discriminator."""
-
-    def __init__(self, d_conv_dim, num_classes):
+    def __init__(self, num_classes: int, image_size: int, conv_dim: int):
         super(SADiscriminator, self).__init__()
-        self.d_conv_dim = d_conv_dim
-        self.opt_block1 = DiscOptBlock(3, d_conv_dim)
-        self.block1 = DiscBlock(d_conv_dim, d_conv_dim * 2)
-        self.self_attn = Self_Attn(d_conv_dim * 2)
-        self.block2 = DiscBlock(d_conv_dim * 2, d_conv_dim * 4)
-        self.block3 = DiscBlock(d_conv_dim * 4, d_conv_dim * 8)
-        self.block4 = DiscBlock(d_conv_dim * 8, d_conv_dim * 16)
-        self.block5 = DiscBlock(d_conv_dim * 16, d_conv_dim * 16)
-        self.relu = nn.ReLU(inplace=True)
-        self.snlinear1 = snlinear(in_features=d_conv_dim * 16, out_features=1)
-        self.sn_embedding1 = sn_embedding(num_classes, d_conv_dim * 16)
 
-        # Weight init
-        self.apply(init_weights)
-        xavier_uniform_(self.sn_embedding1.weight)
+        self.image_size = image_size
+        layer1 = []
+        layer2 = []
+        layer3 = []
+        last = []
 
-    def forward(self, x, labels):
-        # n x 3 x 128 x 128
-        h0 = self.opt_block1(x)  # n x d_conv_dim   x 64 x 64
-        h1 = self.block1(h0)  # n x d_conv_dim*2 x 32 x 32
-        h1 = self.self_attn(h1)  # n x d_conv_dim*2 x 32 x 32
-        h2 = self.block2(h1)  # n x d_conv_dim*4 x 16 x 16
-        h3 = self.block3(h2)  # n x d_conv_dim*8 x  8 x  8
-        h4 = self.block4(h3)  # n x d_conv_dim*16 x 4 x  4
-        h5 = self.block5(h4, downsample=False)  # n x d_conv_dim*16 x 4 x 4
-        h5 = self.relu(h5)  # n x d_conv_dim*16 x 4 x 4
-        h6 = torch.sum(h5, dim=[2, 3])  # n x d_conv_dim*16
-        output1 = torch.squeeze(self.snlinear1(h6))  # n
-        # Projection
-        h_labels = self.sn_embedding1(labels)
-        # Modified
-        h_labels = torch.sum(h_labels, dim=[1])  # n x d_conv_dim*16
-        proj = torch.mul(h6, h_labels)  # n x d_conv_dim*16
-        output2 = torch.sum(proj, dim=[1])  # n
-        # Out
-        output = output1 + output2  # n
-        return output
+        layer1.append(SpectralNorm(nn.Conv2d(4, conv_dim, 4, 2, 1)))
+        layer1.append(nn.LeakyReLU(0.1))
+
+        curr_dim = conv_dim
+
+        layer2.append(SpectralNorm(nn.Conv2d(curr_dim, curr_dim * 2, 4, 2, 1)))
+        layer2.append(nn.LeakyReLU(0.1))
+        curr_dim = curr_dim * 2
+
+        layer3.append(SpectralNorm(nn.Conv2d(curr_dim, curr_dim * 2, 4, 2, 1)))
+        layer3.append(nn.LeakyReLU(0.1))
+        curr_dim = curr_dim * 2
+
+        if image_size == 64:
+            layer4 = []
+            layer4.append(SpectralNorm(nn.Conv2d(curr_dim, curr_dim * 2, 4, 2, 1)))
+            layer4.append(nn.LeakyReLU(0.1))
+            self.l4 = nn.Sequential(*layer4)
+            curr_dim = curr_dim * 2
+        self.l1 = nn.Sequential(*layer1)
+        self.l2 = nn.Sequential(*layer2)
+        self.l3 = nn.Sequential(*layer3)
+
+        last.append(nn.Conv2d(curr_dim, 1, 4))
+        self.last = nn.Sequential(*last)
+
+        self.attn1 = SelfAttn(256)
+        self.attn2 = SelfAttn(512)
+
+        self.label_to_condition = nn.Sequential(
+            nn.ConvTranspose2d(in_channels=num_classes,
+                               out_channels=16,
+                               kernel_size=4,
+                               stride=1,
+                               padding=0,
+                               bias=False),
+            nn.BatchNorm2d(num_features=16),
+            nn.ReLU(True),
+
+            nn.ConvTranspose2d(in_channels=16,
+                               out_channels=4,
+                               kernel_size=4,
+                               stride=2,
+                               padding=1,
+                               bias=False),
+            nn.BatchNorm2d(num_features=4),
+            nn.ReLU(True),
+
+            nn.ConvTranspose2d(in_channels=4,
+                               out_channels=1,
+                               kernel_size=4,
+                               stride=2,
+                               padding=1,
+                               bias=False),
+            nn.BatchNorm2d(num_features=1),
+            nn.ReLU(True),
+        )
+        self.linear = nn.Sequential(
+            nn.Linear(in_features=16 * 16,
+                      out_features=32 * 32,
+                      bias=False),
+            nn.ReLU(True),
+
+            nn.Linear(in_features=32 * 32,
+                      out_features=image_size * image_size,
+                      bias=False),
+            nn.Tanh()
+        )
+
+    def forward(self, x: torch.Tensor, label: torch.Tensor) -> torch.Tensor:
+        """
+        Forwarding
+        :param x: Batched data
+        :param label: Batched labels
+        :return: Discrimination results
+        """
+        batch_size, num_classes = label.size()
+        label = label.view(batch_size, num_classes, 1, 1)
+        condition = self.label_to_condition(label).view(batch_size, 1, -1)
+        condition = self.linear(condition).view(-1, 1, self.image_size, self.image_size)
+        inputs = torch.cat([x, condition], 1)
+
+        out = self.l1(inputs)
+        out = self.l2(out)
+        out = self.l3(out)
+        out = self.attn1(out)
+        out = self.l4(out)
+        out = self.attn2(out)
+        return self.last(out).view(-1, 1)

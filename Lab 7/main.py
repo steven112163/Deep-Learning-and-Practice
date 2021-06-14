@@ -51,11 +51,12 @@ def train_and_evaluate_cgan(train_loader: DataLoader,
         discriminator.apply(weights_init)
     else:
         # Self Attention GAN
-        generator = SAGenerator(z_dim=args.image_size,
-                                g_conv_dim=args.image_size // 2,
-                                num_classes=num_classes).to(training_device)
-        discriminator = SADiscriminator(d_conv_dim=args.image_size // 2,
-                                        num_classes=num_classes).to(training_device)
+        generator = SAGenerator(noise_size=args.image_size,
+                                label_size=num_classes,
+                                conv_dim=args.image_size).to(training_device)
+        discriminator = SADiscriminator(num_classes=num_classes,
+                                        image_size=args.image_size,
+                                        conv_dim=args.image_size).to(training_device)
 
     if os.path.exists(f'model/task_1/{args.model}.pt'):
         checkpoint = torch.load(f'model/task_1/{args.model}.pt')
