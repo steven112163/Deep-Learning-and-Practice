@@ -198,7 +198,6 @@ class SADiscriminator(nn.Module):
         self.l3 = nn.Sequential(*layer3)
 
         last.append(nn.Conv2d(curr_dim, 1, 4))
-        last.append(nn.Sigmoid())
         self.last = nn.Sequential(*last)
 
         self.attn1 = SelfAttn(256)

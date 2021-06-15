@@ -42,12 +42,7 @@ def train_cgan(data_loader: DataLoader,
     total_g_loss = 0.0
     total_d_loss = 0.0
 
-    if args.model == 'DCGAN':
-        # DCGAN
-        criterion = nn.BCELoss().to(training_device)
-    else:
-        # SAGAN
-        criterion = nn.BCELoss().to(training_device)
+    criterion = nn.BCEWithLogitsLoss().to(training_device)
 
     for batch_idx, batch_data in enumerate(data_loader):
         images, real_labels = batch_data
@@ -65,12 +60,7 @@ def train_cgan(data_loader: DataLoader,
         outputs = discriminator.forward(images, real_labels)
 
         # Calculate loss on all-real batch
-        if args.model == 'DCGAN':
-            # DCGAN
-            loss_d_real = criterion(outputs, torch.ones_like(outputs, dtype=torch.float))
-        else:
-            # SAGAN
-            loss_d_real = criterion(outputs, torch.ones_like(outputs, dtype=torch.float))
+        loss_d_real = criterion(outputs, torch.ones_like(outputs, dtype=torch.float))
 
         # Train with all-fake batch
         # Generate batch of latent vectors
@@ -86,12 +76,7 @@ def train_cgan(data_loader: DataLoader,
         outputs = discriminator.forward(fake_outputs.detach(), real_labels)
 
         # Calculate loss on fake batch
-        if args.model == 'DCGAN':
-            # DCGAN
-            loss_d_fake = criterion(outputs, torch.zeros_like(outputs, dtype=torch.float))
-        else:
-            # SAGAN
-            loss_d_fake = criterion(outputs, torch.zeros_like(outputs, dtype=torch.float))
+        loss_d_fake = criterion(outputs, torch.zeros_like(outputs, dtype=torch.float))
 
         # Compute loss of discriminator as sum over the fake and the real batches
         loss_d = loss_d_real + loss_d_fake
@@ -109,12 +94,7 @@ def train_cgan(data_loader: DataLoader,
         outputs = discriminator.forward(fake_outputs, real_labels)
 
         # Calculate generator's loss based on this output
-        if args.model == 'DCGAN':
-            # DCGAN
-            loss_g = criterion(outputs, torch.ones_like(outputs, dtype=torch.float))
-        else:
-            # SAGAN
-            loss_g = criterion(outputs, torch.ones_like(outputs, dtype=torch.float))
+        loss_g = criterion(outputs, torch.ones_like(outputs, dtype=torch.float))
         total_g_loss += loss_g.item()
 
         # Calculate gradients for generator and update
