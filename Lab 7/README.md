@@ -4,6 +4,13 @@
 
 
 
+## Reference
+💡 cDCGAN is adapted from [pytorch tutorial](https://pytorch.org/tutorials/beginner/dcgan_faces_tutorial.html)  
+💡 cSAGAN is adapted from [github](https://github.com/heykeetae/Self-Attention-GAN)  
+💡 cGlow is adapted from [github](https://github.com/5yearsKim/Conditional-Normalizing-Flow)
+
+
+
 ## Arguments
 |Argument|Description|Default|
 |---|---|---|
